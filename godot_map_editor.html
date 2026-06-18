@@ -1,0 +1,2014 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Godot Map Editor — LM Studio</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#1a1a2e;--bg2:#16213e;--bg3:#0f3460;
+  --surface:#1e2a45;--surface2:#243352;--surface3:#2d3f60;
+  --border:#2e4070;--border2:#3d5590;
+  --text:#e0e8ff;--text2:#a0b0d0;--text3:#6080a0;
+  --green:#2ecc71;--red:#e74c3c;--blue:#3498db;--amber:#f39c12;
+  --green-dim:rgba(46,204,113,0.18);--red-dim:rgba(231,76,60,0.18);
+  --blue-dim:rgba(52,152,219,0.18);--amber-dim:rgba(243,156,18,0.18);
+  --accent:#4fc3f7;--radius:6px;--radius2:10px;
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;user-select:none}
+#app{display:flex;flex-direction:column;height:100vh}
+#topbar{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;z-index:10}
+.tb-logo{font-size:13px;font-weight:700;color:var(--accent);padding-right:10px;border-right:1px solid var(--border);margin-right:4px}
+.tb-group{display:flex;gap:3px;align-items:center;padding-right:8px;border-right:1px solid var(--border)}
+.tb-group:last-child{border-right:none;margin-left:auto}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;font-size:11.5px;font-family:inherit;border:1px solid var(--border2);border-radius:var(--radius);cursor:pointer;background:var(--surface);color:var(--text);transition:all .12s;white-space:nowrap}
+.btn:hover{background:var(--surface2);border-color:var(--accent)}
+.btn.active{background:var(--blue-dim);border-color:var(--blue);color:var(--accent)}
+.btn.active-green{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.btn.active-red{background:var(--red-dim);border-color:var(--red);color:var(--red)}
+.btn.active-amber{background:var(--amber-dim);border-color:var(--amber);color:var(--amber)}
+.btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+label.btn{cursor:pointer}
+#main{display:flex;flex:1;overflow:hidden}
+/* Canvas area: scrollable so the image can be bigger than the viewport */
+#canvas-wrap{flex:1;position:relative;overflow:auto;background:#0d1117}
+#canvas{display:block;cursor:default;image-rendering:pixelated}
+#nav-overlay-info{position:sticky;top:8px;left:8px;display:inline-block;background:rgba(0,0,0,.8);border:1px solid var(--green);border-radius:var(--radius);padding:4px 10px;font-size:11px;color:var(--green);pointer-events:none;display:none;z-index:5;margin:8px}
+/* img size badge */
+#img-info{font-size:10px;color:var(--text3);padding:2px 6px;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border)}
+#panel{width:230px;background:var(--bg2);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.panel-block{border-bottom:1px solid var(--border)}
+.panel-head{padding:7px 10px 5px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;display:flex;align-items:center;justify-content:space-between}
+.panel-head .add-btn{font-size:16px;line-height:1;cursor:pointer;color:var(--green);background:none;border:none;font-family:inherit}
+.lm-cfg{padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.lm-cfg input{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px 7px;font-size:11px;color:var(--text);font-family:inherit;width:100%}
+.lm-cfg input:focus{outline:none;border-color:var(--accent)}
+.lm-status{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text3)}
+.lm-dot{width:7px;height:7px;border-radius:50%;background:#636e72;flex-shrink:0}
+.lm-dot.ok{background:var(--green)}.lm-dot.err{background:var(--red)}.lm-dot.busy{background:var(--amber);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.cats{padding:6px 8px}
+.cat-row{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:var(--radius);cursor:pointer;font-size:11.5px;color:var(--text2);border:1px solid transparent;margin-bottom:2px;transition:all .1s}
+.cat-row:hover{background:var(--surface);color:var(--text)}
+.cat-row.sel{background:var(--surface2);border-color:var(--border2);color:var(--text)}
+.cat-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.cat-count{margin-left:auto;font-size:10px;color:var(--text3);background:var(--surface);padding:1px 5px;border-radius:10px}
+#obj-list{flex:1;overflow-y:auto;padding:6px 8px}
+#obj-list::-webkit-scrollbar{width:4px}
+#obj-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.obj-row{display:flex;align-items:center;gap:5px;padding:5px 6px;border-radius:var(--radius);cursor:pointer;font-size:11px;color:var(--text2);border:1px solid transparent;margin-bottom:2px;transition:all .1s}
+.obj-row:hover{background:var(--surface);color:var(--text)}
+.obj-row.sel{background:var(--surface2);border-color:var(--border2);color:var(--text)}
+.obj-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.obj-cat-badge{font-size:9px;padding:1px 5px;border-radius:8px;flex-shrink:0;font-weight:600}
+.obj-del{opacity:0;cursor:pointer;color:var(--red);font-size:14px;line-height:1;background:none;border:none;font-family:inherit}
+.obj-row:hover .obj-del{opacity:.7}
+.type-row{display:flex;align-items:center;gap:5px;padding:5px 6px;border-radius:var(--radius);cursor:pointer;font-size:11px;color:var(--text2);border:1px solid transparent;margin-bottom:2px;transition:all .1s}
+.type-row:hover{background:var(--surface);color:var(--text)}
+.type-row.sel{background:var(--surface2);border-color:var(--accent);color:var(--accent)}
+.type-row.done{opacity:.4}
+.type-badge{font-size:9px;padding:1px 5px;border-radius:8px;flex-shrink:0;font-weight:600;background:var(--surface2);color:var(--text3)}
+.type-remaining{margin-left:auto;font-size:10px;font-weight:700;color:var(--amber);background:rgba(243,156,18,.12);padding:1px 6px;border-radius:10px;flex-shrink:0}
+.type-remaining.done{color:var(--green);background:rgba(46,204,113,.12)}
+.type-count-input{width:32px;background:var(--surface);border:1px solid var(--border2);border-radius:4px;padding:1px 4px;font-size:11px;font-weight:700;color:var(--amber);text-align:center;font-family:inherit}
+.type-count-input:focus{outline:none;border-color:var(--accent);color:var(--text)}
+.type-count-input.done{color:var(--green)}
+.type-del{opacity:0;cursor:pointer;color:var(--text3);font-size:13px;line-height:1;background:none;border:none;font-family:inherit;padding:0 2px;flex-shrink:0}
+.type-row:hover .type-del{opacity:.6}
+.type-del:hover{color:var(--red)!important;opacity:1!important}
+#inspector{padding:8px 10px;font-size:11px;border-top:1px solid var(--border)}
+.insp-row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.insp-label{color:var(--text3);width:50px;flex-shrink:0}
+.insp-val{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:3px 6px;color:var(--text);font-family:inherit;font-size:11px}
+.insp-val:focus{outline:none;border-color:var(--accent)}
+select.insp-val option{background:var(--bg)}
+#statsbar{display:flex;gap:12px;padding:4px 10px;background:var(--bg3);border-top:1px solid var(--border);font-size:10.5px;color:var(--text3);flex-shrink:0}
+.stat-item{display:flex;align-items:center;gap:4px}
+.stat-dot{width:6px;height:6px;border-radius:50%}
+#ctxmenu{position:fixed;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius2);box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:1000;min-width:160px;display:none;overflow:hidden}
+.ctx-item{padding:7px 14px;font-size:12px;cursor:pointer;color:var(--text);display:flex;align-items:center;gap:8px;transition:background .1s}
+.ctx-item:hover{background:var(--surface3)}
+.ctx-item.danger{color:var(--red)}.ctx-item.danger:hover{background:var(--red-dim)}
+.ctx-sep{height:1px;background:var(--border);margin:2px 0}
+#lm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;display:none;align-items:center;justify-content:center}
+#lm-overlay.show{display:flex}
+#lm-dialog{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius2);width:500px;max-height:72vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.6)}
+#lm-dialog-head{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;color:var(--accent);display:flex;align-items:center;justify-content:space-between}
+#lm-log{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px;min-height:120px}
+#lm-log::-webkit-scrollbar{width:4px}
+#lm-log::-webkit-scrollbar-thumb{background:var(--border2)}
+.lm-msg{padding:8px 12px;border-radius:var(--radius);font-size:12px;line-height:1.5;max-width:92%}
+.lm-msg.user{align-self:flex-end;background:var(--blue-dim);border:1px solid #2980b9;color:var(--text)}
+.lm-msg.ai{align-self:flex-start;background:var(--surface2);border:1px solid var(--border);color:var(--text);white-space:pre-wrap}
+.lm-msg.sys{align-self:center;background:none;color:var(--text3);font-size:10.5px;font-style:italic;text-align:center}
+#lm-input-row{display:flex;gap:6px;padding:10px 14px;border-top:1px solid var(--border)}
+#lm-input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:7px 10px;font-size:12px;color:var(--text);font-family:inherit;resize:none;height:40px}
+#lm-input:focus{outline:none;border-color:var(--accent)}
+</style>
+</head>
+<body>
+<div id="app">
+
+<div id="topbar">
+  <span class="tb-logo">⚔ Godot Map Editor</span>
+
+  <div class="tb-group">
+    <label class="btn" for="img-upload">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Carica Mappa
+    </label>
+    <input type="file" id="img-upload" accept="image/*" style="display:none">
+    <span id="img-info">nessuna immagine</span>
+  </div>
+
+  <div class="tb-group">
+    <button class="btn active" id="btn-select" onclick="setTool('select')">
+      <svg viewBox="0 0 24 24"><path d="M5 3l14 9-7 1-4 7z"/></svg> Seleziona
+    </button>
+    <button class="btn" id="btn-create" onclick="setTool('create')">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> Crea
+    </button>
+  </div>
+
+  <div class="tb-group">
+    <button class="btn" id="btn-walk" onclick="setTool('walk')">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><path d="M12 7l-2 5 2 2 1 5M10 12l-3 3M14 12l3 1"/></svg> Camminabile
+    </button>
+    <button class="btn" id="btn-block" onclick="setTool('block')">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Blocca
+    </button>
+    <button class="btn" id="btn-erase-nav" onclick="setTool('erase-nav')">
+      <svg viewBox="0 0 24 24"><path d="M20 20H7L3 16l9-13 8 11v6z"/><line x1="6.34" y1="17.66" x2="17.66" y2="6.34"/></svg> Cancella Nav
+    </button>
+  </div>
+
+  <div class="tb-group">
+    <button class="btn" id="btn-nav-view" onclick="toggleNavView()">
+      <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Vista Nav
+    </button>
+    <button class="btn" onclick="clearNavmesh()">
+      <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg> Reset Nav
+    </button>
+  </div>
+
+  <div class="tb-group">
+    <button class="btn" onclick="openLMChat()">
+      <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> LM Studio
+    </button>
+    <button class="btn" onclick="runAutoDetect()">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Rileva AI
+    </button>
+  </div>
+
+  <div class="tb-group">
+    <button class="btn active-green" onclick="saveProject()">
+      <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Salva
+    </button>
+    <label class="btn" for="load-project-input">
+      <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg> Carica
+    </label>
+    <input type="file" id="load-project-input" accept=".gmproj,.json" style="display:none" onchange="loadProject(this)">
+  </div>
+
+  <div class="tb-group">
+    <button class="btn" onclick="exportGodot()">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Esporta .tscn
+    </button>
+    <button class="btn" onclick="exportFlame()" style="color:#54c5f8;border-color:#54c5f8">
+      <svg viewBox="0 0 24 24"><path d="M12 2C8 2 5 6 5 10c0 2.5 1 4.5 2.5 6L12 22l4.5-6C18 14.5 19 12.5 19 10c0-4-3-8-7-8z"/></svg> Esporta Flame
+    </button>
+  </div>
+
+  <div class="tb-group" style="border:none">
+    <span style="font-size:11px;color:var(--text3)">Snap: <b style="color:var(--accent)">16px</b></span>
+  </div>
+</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <div id="nav-overlay-info">👁 Vista navmesh — oggetti nascosti</div>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div id="panel">
+    <div class="panel-block">
+      <div class="panel-head">LM Studio</div>
+      <div class="lm-cfg">
+        <input type="text" id="lm-url" value="http://localhost:1234" placeholder="URL LM Studio">
+        <input type="text" id="lm-model" value="local-model" placeholder="Nome modello">
+        <div class="lm-status">
+          <div class="lm-dot" id="lm-dot"></div>
+          <span id="lm-status-txt">Non testato</span>
+          <button class="btn" style="margin-left:auto;padding:2px 7px;font-size:10px" onclick="testLM()">Test</button>
+        </div>
+        <div id="cors-warn" style="display:none;background:rgba(243,156,18,0.15);border:1px solid #f39c12;border-radius:6px;padding:5px 7px;font-size:10px;color:#f39c12;line-height:1.6;margin-top:2px">
+          ⚠ Aperto da <b>file://</b> — CORS bloccato.<br>
+          Esegui <b>avvia_editor.py</b> e usa<br>
+          <code>http://localhost:8765</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-block" id="types-panel" style="display:none">
+      <div class="panel-head">
+        Detected Types
+        <span style="display:flex;gap:3px;align-items:center">
+          <button class="btn" id="sort-name-btn" onclick="setTypeSort('name')" style="padding:1px 6px;font-size:10px">A-Z</button>
+          <button class="btn" id="sort-count-btn" onclick="setTypeSort('count')" style="padding:1px 6px;font-size:10px">#</button>
+          <button class="add-btn" onclick="addCustomType()" title="Add custom type">＋</button>
+        </span>
+      </div>
+      <div id="types-list" style="padding:4px 8px;max-height:220px;overflow-y:auto"></div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-head">Categories <button class="add-btn" onclick="addCategory()">＋</button></div>
+      <div class="cats" id="cats-list"></div>
+    </div>
+
+    <div class="panel-head" style="padding:7px 10px 5px;border-bottom:1px solid var(--border)">
+      Objects <span id="obj-count" style="font-size:10px;color:var(--text3)">0</span>
+    </div>
+    <div id="obj-list"></div>
+
+    <div id="inspector" style="display:none">
+      <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px">Properties</div>
+      <div class="insp-row">
+        <span class="insp-label">Name</span>
+        <input class="insp-val" id="insp-name" type="text" oninput="updateSelected('name',this.value)">
+      </div>
+      <div class="insp-row">
+        <span class="insp-label">Category</span>
+        <select class="insp-val" id="insp-cat" onchange="updateSelected('category',this.value)"></select>
+      </div>
+      <div class="insp-row">
+        <span class="insp-label">X / Y</span>
+        <input class="insp-val" id="insp-x" type="number" style="width:46%" oninput="updateSelected('x',+this.value)">
+        <input class="insp-val" id="insp-y" type="number" style="width:46%" oninput="updateSelected('y',+this.value)">
+      </div>
+      <div class="insp-row">
+        <span class="insp-label">W / H</span>
+        <input class="insp-val" id="insp-w" type="number" style="width:46%" oninput="updateSelected('w',+this.value)">
+        <input class="insp-val" id="insp-h" type="number" style="width:46%" oninput="updateSelected('h',+this.value)">
+      </div>
+      <div class="insp-row">
+        <span class="insp-label">Blocks nav</span>
+        <input type="checkbox" id="insp-blocks" onchange="updateSelected('blocksNav',this.checked)" style="accent-color:var(--red)">
+        <span style="font-size:10px;color:var(--text3);margin-left:4px">Collision</span>
+      </div>
+      <div class="insp-row" id="insp-door-row" style="display:none">
+        <span class="insp-label">Door</span>
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer">
+          <input type="checkbox" id="insp-door-open" onchange="updateSelected('doorOpen',this.checked)" style="accent-color:var(--green)">
+          <span id="insp-door-label" style="color:var(--text3)">Closed</span>
+        </label>
+      </div>
+      <div class="insp-row" id="insp-room-desc-row" style="display:none">
+        <span class="insp-label">Desc</span>
+        <input class="insp-val" id="insp-desc" type="text" maxlength="100" placeholder="Room description (max 100)" oninput="updateSelected('description',this.value)">
+      </div>
+      <div class="insp-row" id="insp-room-tag-row" style="display:none">
+        <span class="insp-label">Tag</span>
+        <input class="insp-val" id="insp-tag" type="text" maxlength="50" placeholder="#Alice's bedroom" oninput="updateSelected('tag',this.value)" style="color:var(--accent)">
+      </div>
+      <div id="insp-room-counter" style="display:none;font-size:9px;color:var(--text3);text-align:right;padding:0 2px"></div>
+    </div>
+  </div>
+</div>
+
+<div id="statsbar">
+  <div class="stat-item"><div class="stat-dot" style="background:var(--blue)"></div><span id="s-obj">0 oggetti</span></div>
+  <div class="stat-item"><div class="stat-dot" style="background:var(--green)"></div><span id="s-walk">0 cam.</span></div>
+  <div class="stat-item"><div class="stat-dot" style="background:var(--red)"></div><span id="s-block">0 bloc.</span></div>
+  <div class="stat-item"><span id="s-imgsize" style="color:var(--text3)"></span></div>
+  <div class="stat-item" style="margin-left:auto"><span id="s-tool" style="color:var(--accent)">Strumento: Seleziona</span></div>
+  <div class="stat-item"><span id="s-pos">img x:0 y:0 — cella 0,0</span></div>
+</div>
+
+<div id="ctxmenu">
+  <div class="ctx-item" onclick="ctxRename()">✏️ Rinomina</div>
+  <div class="ctx-item" onclick="ctxDuplicate()">📋 Duplica</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item danger" onclick="ctxDelete()">🗑 Elimina</div>
+</div>
+
+<div id="type-dialog-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;display:none;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius2);width:340px;padding:16px;box-shadow:0 16px 48px rgba(0,0,0,.6)">
+    <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:12px" id="type-dialog-title">Add Type</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div>
+        <label style="font-size:10px;color:var(--text3);text-transform:uppercase">Name</label>
+        <input id="td-name" type="text" class="insp-val" style="width:100%;margin-top:3px" placeholder='e.g. "chair", "barrel"'>
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--text3);text-transform:uppercase">Category</label>
+        <select id="td-cat" class="insp-val" style="width:100%;margin-top:3px"></select>
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--text3);text-transform:uppercase">Count</label>
+        <input id="td-count" type="number" min="1" value="1" class="insp-val" style="width:100%;margin-top:3px">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" onclick="closeTypeDialog()">Cancel</button>
+      <button class="btn active-green" onclick="confirmTypeDialog()">Add</button>
+    </div>
+  </div>
+</div>
+
+<div id="lm-overlay">
+  <div id="lm-dialog">
+    <div id="lm-dialog-head">
+      🤖 LM Studio — Analisi mappa
+      <button class="btn" onclick="closeLMChat()" style="padding:2px 8px">✕</button>
+    </div>
+    <div id="lm-log"></div>
+    <div id="lm-input-row">
+      <textarea id="lm-input" placeholder="Chiedi all'LLM di classificare oggetti, descrivere stanze o suggerire la navmesh..."></textarea>
+      <button class="btn" onclick="sendLM()" style="padding:6px 14px;align-self:stretch">
+        <svg viewBox="0 0 24 24" width="14" height="14" style="stroke:currentColor;fill:none;stroke-width:2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+//  COORDINATE SYSTEM
+//  All objects, navmesh cells, and mouse positions are stored
+//  in IMAGE-space (pixels of the original image, snapped to
+//  GRID=64px).  The canvas is always exactly imgW × imgH pixels.
+//  The canvas-wrap div scrolls when the image is bigger than
+//  the visible area.
+// ════════════════════════════════════════════════════════════════
+const GRID = 64;   // fixed tile size in image-space pixels (image must be multiple of this)
+let SNAP_SIZE = 16; // fixed selection/brush size: always 16px
+
+const C   = document.getElementById('canvas');
+const ctx = C.getContext('2d');
+
+let mapImg   = null;
+let imgW     = 0;   // image width  rounded up to multiple of GRID
+let imgH     = 0;   // image height rounded up to multiple of GRID
+let rawW     = 0;   // original image pixel width
+let rawH     = 0;
+
+let tool         = 'select';
+let navmesh      = {};       // "cx,cy" → "walk"|"block"  (cell coords in GRID units)
+let objects      = [];
+let selectedId   = null;
+let navViewOnly  = false;
+let isDragging   = false;
+let isResizing   = false;
+let isDrawingNav = false;
+let isErasingNav = false;   // right-click erase nav
+let isCreating   = false;
+
+const NAV_CELL       = 16;  // navmesh storage and minimum brush resolution in pixels
+const NAV_BRUSH_STEP = 16;  // resize step for +/- keys
+const NAV_BRUSH_MIN  = 16;
+const NAV_BRUSH_MAX  = 256;
+let   NAV_BRUSH      = 16;  // current brush size, resizable with numpad +/-
+
+let dragOff      = {x:0,y:0};
+let resizeHandle = null;
+let createStart  = null;
+let createRect   = null;
+let ctxTarget    = null;
+let idCounter    = 1;
+let _mousePos    = null;  // last known mouse position for cursor highlight
+
+// ─── detected object types (from AI) ──────────────────────────
+// [{name, category, count, placed}]  — "pool" the AI returned
+let detectedTypes = [];
+let activeTypeName = null;  // name selected from the type list to draw
+let typeListSort   = 'name'; // 'name' | 'count'
+
+const CATS = {
+  room:        {label:'Room',         color:'#9b59b6'},
+  hallway:     {label:'Hallway',      color:'#8e44ad'},
+  furniture:   {label:'Furniture',    color:'#3498db'},
+  interactive: {label:'Interactive',  color:'#1abc9c'},
+  door:        {label:'Door',         color:'#f39c12'},
+  deco:        {label:'Decoration',   color:'#e91e8c'},
+  unknown:     {label:'Unknown',      color:'#e74c3c'},
+};
+let selectedCat = 'furniture';
+
+// ─── snap size change ──────────────────────────────────────────
+function setSnapSize(s){
+  SNAP_SIZE = s;
+  document.getElementById('snap-info').textContent = `Griglia: ${s}px`;
+  draw();
+}
+
+function snapFloor(v,s=SNAP_SIZE){ return Math.floor(v/s)*s; }
+function snapRound(v,s=SNAP_SIZE){ return Math.round(v/s)*s; }
+function snapCeil(v,s=SNAP_SIZE){  return Math.ceil(v/s)*s;  }
+function clampImg(x,y){
+  return {x:Math.max(0,Math.min(x,imgW)), y:Math.max(0,Math.min(y,imgH))};
+}
+
+// ─── image load ────────────────────────────────────────────────
+document.getElementById('img-upload').onchange = e => {
+  const f = e.target.files[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      rawW = img.width; rawH = img.height;
+      // Validate: warn if image is not a multiple of 64px
+      const warnW = rawW % GRID !== 0;
+      const warnH = rawH % GRID !== 0;
+      if(warnW || warnH){
+        const adjW = Math.ceil(rawW/GRID)*GRID;
+        const adjH = Math.ceil(rawH/GRID)*GRID;
+        const msg = `⚠️ Dimensioni immagine non multiple di ${GRID}px!\n\n` +
+          `Dimensioni originali: ${rawW}×${rawH}px\n` +
+          (warnW ? `  Larghezza: ${rawW}px → arrotondata a ${adjW}px (+${adjW-rawW}px)\n` : '') +
+          (warnH ? `  Altezza: ${rawH}px → arrotondata a ${adjH}px (+${adjH-rawH}px)\n` : '') +
+          `\nPer risultati ottimali, ridimensiona l'immagine a ${adjW}×${adjH}px prima di importarla.`;
+        alert(msg);
+      }
+      // round UP to next multiple of GRID
+      imgW = Math.ceil(img.width  / GRID) * GRID;
+      imgH = Math.ceil(img.height / GRID) * GRID;
+      C.width  = imgW;
+      C.height = imgH;
+      mapImg = img;
+      objects  = [];
+      navmesh  = {};
+      selectedId = null;
+      document.getElementById('img-info').textContent =
+        `${imgW}×${imgH}px (${imgW/GRID}×${imgH/GRID} celle)`;
+      document.getElementById('s-imgsize').textContent =
+        `immagine: ${rawW}×${rawH} → canvas: ${imgW}×${imgH} (griglia ${GRID}px)`;
+      refreshUI();
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(f);
+};
+
+// ─── canvas XY from mouse event → image-space coords ───────────
+function imgXY(e){
+  const r = C.getBoundingClientRect();
+  // C is rendered at its natural pixel size (no CSS scaling)
+  // so clientX - rect.left == canvas pixel == image pixel
+  const x = e.clientX - r.left;
+  const y = e.clientY - r.top;
+  return {x, y};
+}
+
+// ─── categories UI ─────────────────────────────────────────────
+function buildCatsUI(){
+  const el = document.getElementById('cats-list');
+  el.innerHTML = '';
+  const sel = document.getElementById('insp-cat');
+  sel.innerHTML = '';
+  for(const [k,v] of Object.entries(CATS)){
+    const cnt = objects.filter(o=>o.category===k).length;
+    const row = document.createElement('div');
+    row.className = 'cat-row'+(k===selectedCat?' sel':'');
+    row.innerHTML = `<span class="cat-dot" style="background:${v.color}"></span><span>${v.label}</span><span class="cat-count">${cnt}</span>`;
+    row.onclick = () => { selectedCat=k; buildCatsUI(); };
+    el.appendChild(row);
+    const opt = document.createElement('option');
+    opt.value=k; opt.textContent=v.label;
+    sel.appendChild(opt);
+  }
+}
+buildCatsUI();
+
+function addCategory(){
+  const name = prompt('Nome nuova categoria:'); if(!name) return;
+  const key = name.toLowerCase().replace(/\s+/g,'_');
+  if(CATS[key]){ alert('Già esistente'); return; }
+  const palette=['#9b59b6','#27ae60','#d35400','#16a085','#c0392b'];
+  CATS[key]={label:name, color:palette[Object.keys(CATS).length%palette.length]};
+  buildCatsUI();
+}
+// show types panel immediately so user can add types before running AI
+document.getElementById('types-panel').style.display='block';
+refreshTypeList();
+
+// ─── tool ──────────────────────────────────────────────────────
+function setTool(t){
+  tool = t;
+  ['select','create','walk','block','erase-nav'].forEach(id=>{
+    const b=document.getElementById('btn-'+id); if(b) b.className='btn';
+  });
+  const cls={select:'btn active',create:'btn active-amber',walk:'btn active-green',block:'btn active-red','erase-nav':'btn active'};
+  const el=document.getElementById('btn-'+t); if(el) el.className=cls[t]||'btn active';
+  const names={select:'Select / Move',create:'Create object',walk:'Walkable',block:'Block','erase-nav':'Erase nav'};
+  const navTools = ['walk','block','erase-nav'];
+  const label = navTools.includes(t)
+    ? `Tool: ${names[t]} — brush ${NAV_BRUSH}px  (+/- to resize)`
+    : `Tool: ${names[t]||t}`;
+  document.getElementById('s-tool').textContent = label;
+  C.style.cursor=t==='select'?'default':t==='create'?'crosshair':'cell';
+}
+
+// ─── object helpers ────────────────────────────────────────────
+function newId(){ return 'obj_'+(idCounter++); }
+function getObj(id){ return objects.find(o=>o.id===id); }
+function selObj(){ return getObj(selectedId); }
+
+// All coords/sizes are in image-space and snapped to GRID
+function addObject(ix,iy,iw,ih){
+  // if a type is active, use its category
+  let useCat = selectedCat;
+  let useName = null;
+  if(activeTypeName){
+    const t = detectedTypes.find(t=>t.name===activeTypeName);
+    if(t){ useCat = t.category; useName = t.name; }
+  }
+  const cat=CATS[useCat]||CATS.unknown;
+  // snap origin to SNAP_SIZE grid, size to at least 1 SNAP_SIZE cell
+  const x = snapFloor(Math.max(0,ix));
+  const y = snapFloor(Math.max(0,iy));
+  const w = Math.max(SNAP_SIZE, snapRound(iw));
+  const h = Math.max(SNAP_SIZE, snapRound(ih));
+  const obj={
+    id:newId(),
+    name: useName || `${cat.label} ${idCounter}`,
+    category: useCat, x, y, w, h,
+    blocksNav: useCat !== 'room' && useCat !== 'hallway',
+    ...(useName ? {typeName: useName} : {}),
+    ...(useCat==='door' ? {doorOpen: false} : {}),
+    ...(isAreaCat(useCat) ? {description: '', tag: ''} : {}),
+  };
+  objects.push(obj);
+  selectedId=obj.id;
+  if(useName) notifyTypePlaced(useName);
+  refreshUI();
+  return obj;
+}
+
+function deleteObject(id){
+  const obj = getObj(id);
+  const tn = obj?.typeName;
+  objects=objects.filter(o=>o.id!==id);
+  if(selectedId===id) selectedId=null;
+  notifyTypeRemoved(tn);
+  refreshUI();
+}
+
+function duplicateObject(id){
+  const src=getObj(id); if(!src) return;
+  const obj={...src, id:newId(), x:src.x+GRID, y:src.y+GRID, name:src.name+' (copia)'};
+  objects.push(obj);
+  selectedId=obj.id;
+  refreshUI();
+}
+
+// ─── inspector ─────────────────────────────────────────────────
+function refreshInspector(){
+  const insp=document.getElementById('inspector');
+  const obj=selObj();
+  if(!obj){ insp.style.display='none'; return; }
+  insp.style.display='block';
+  const nameInput = document.getElementById('insp-name');
+  nameInput.value=obj.name;
+  nameInput.maxLength = isAreaCat(obj.category) ? 30 : 200;
+  document.getElementById('insp-cat').value=obj.category;
+  document.getElementById('insp-x').value=obj.x;
+  document.getElementById('insp-y').value=obj.y;
+  document.getElementById('insp-w').value=obj.w;
+  document.getElementById('insp-h').value=obj.h;
+  document.getElementById('insp-blocks').checked=!!obj.blocksNav;
+  // door row
+  const doorRow = document.getElementById('insp-door-row');
+  if(obj.category==='door'){
+    doorRow.style.display='flex';
+    document.getElementById('insp-door-open').checked=!!obj.doorOpen;
+    document.getElementById('insp-door-label').textContent=obj.doorOpen?'Open':'Closed';
+  } else {
+    doorRow.style.display='none';
+  }
+  // room rows
+  const roomDescRow = document.getElementById('insp-room-desc-row');
+  const roomTagRow = document.getElementById('insp-room-tag-row');
+  const roomCounter = document.getElementById('insp-room-counter');
+  if(isAreaCat(obj.category)){
+    roomDescRow.style.display='flex';
+    roomTagRow.style.display='flex';
+    roomCounter.style.display='block';
+    document.getElementById('insp-desc').value=obj.description||'';
+    document.getElementById('insp-tag').value=obj.tag||'';
+    roomCounter.textContent=`Name: ${(obj.name||'').length}/30 — Tag: ${(obj.tag||'').length}/50 — Desc: ${(obj.description||'').length}/100`;
+  } else {
+    roomDescRow.style.display='none';
+    roomTagRow.style.display='none';
+    roomCounter.style.display='none';
+  }
+}
+
+function isAreaCat(c){ return c==='room'||c==='hallway'; }
+
+function updateSelected(key,val){
+  const obj=selObj(); if(!obj) return;
+  if(['x','y','w','h'].includes(key)){
+    val = key==='w'||key==='h' ? Math.max(SNAP_SIZE, snapRound(+val)) : snapFloor(+val);
+  }
+  if(key==='name' && isAreaCat(obj.category)) val = (val||'').slice(0,30);
+  if(key==='description') val = (val||'').slice(0,100);
+  if(key==='tag') val = (val||'').slice(0,50);
+
+  // Handle category change
+  if(key==='category'){
+    const wasArea = isAreaCat(obj.category);
+    const nowArea = isAreaCat(val);
+    if(nowArea && !wasArea){
+      obj.description = obj.description || '';
+      obj.tag = obj.tag || '';
+      obj.blocksNav = false;
+    }
+    if(!nowArea && wasArea){
+      delete obj.description;
+      delete obj.tag;
+      obj.blocksNav = true;
+    }
+    if(val==='door' && obj.doorOpen===undefined) obj.doorOpen = false;
+    if(val!=='door') delete obj.doorOpen;
+  }
+
+  obj[key]=val;
+  if(key==='doorOpen'){
+    document.getElementById('insp-door-label').textContent=val?'Open':'Closed';
+  }
+  if((key==='name'||key==='description'||key==='tag') && isAreaCat(obj.category)){
+    document.getElementById('insp-room-counter').textContent=`Name: ${(obj.name||'').length}/30 — Tag: ${(obj.tag||'').length}/50 — Desc: ${(obj.description||'').length}/100`;
+  }
+  refreshUI();
+}
+
+// ─── detected types list ───────────────────────────────────────
+function setTypeSort(s){
+  typeListSort = s;
+  document.getElementById('sort-name-btn').className = 'btn'+(s==='name'?' active':'');
+  document.getElementById('sort-count-btn').className = 'btn'+(s==='count'?' active':'');
+  refreshTypeList();
+}
+
+function refreshTypeList(){
+  const panel = document.getElementById('types-panel');
+  // always show the panel (user can add types manually even before AI)
+  panel.style.display='block';
+  const el = document.getElementById('types-list');
+  el.innerHTML = '';
+
+  if(!detectedTypes.length){
+    el.innerHTML = '<div style="font-size:10px;color:var(--text3);padding:4px 2px">No types yet. Press ＋ to add one or run Rileva AI.</div>';
+    return;
+  }
+
+  const sorted = [...detectedTypes].sort((a,b)=>{
+    if(typeListSort==='count'){
+      const ra = a.count - placedCountForType(a.name);
+      const rb = b.count - placedCountForType(b.name);
+      return rb - ra || a.name.localeCompare(b.name);
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  sorted.forEach(t=>{
+    const placed = placedCountForType(t.name);
+    const remaining = t.count - placed;
+    const done = remaining <= 0;
+    const cat = CATS[t.category]||CATS.unknown;
+
+    const row = document.createElement('div');
+    row.className = 'type-row'+(t.name===activeTypeName?' sel':'')+(done?' done':'');
+    row.style.cssText = 'display:flex;align-items:center;gap:5px;padding:4px 6px';
+
+    // color dot
+    const dot = document.createElement('span');
+    dot.className = 'cat-dot';
+    dot.style.background = cat.color;
+    row.appendChild(dot);
+
+    // name
+    const nameEl = document.createElement('span');
+    nameEl.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px';
+    nameEl.textContent = t.name;
+    row.appendChild(nameEl);
+
+    // category badge
+    const badge = document.createElement('span');
+    badge.className = 'type-badge';
+    badge.style.color = cat.color;
+    badge.textContent = cat.label;
+    row.appendChild(badge);
+
+    // editable count input
+    const countEl = document.createElement('input');
+    countEl.type = 'number';
+    countEl.min = placed; // can't go below what's already placed
+    countEl.value = t.count;
+    countEl.className = 'type-count-input' + (done?' done':'');
+    countEl.title = `${placed} placed, ${remaining} remaining`;
+    countEl.onclick = e => e.stopPropagation();
+    countEl.onchange = e => {
+      e.stopPropagation();
+      const newCount = Math.max(placed, parseInt(e.target.value)||0);
+      t.count = newCount;
+      e.target.value = newCount;
+      refreshTypeList();
+    };
+    row.appendChild(countEl);
+
+    // delete type button
+    const delBtn = document.createElement('button');
+    delBtn.className = 'type-del';
+    delBtn.textContent = '×';
+    delBtn.title = 'Remove type';
+    delBtn.onclick = e => {
+      e.stopPropagation();
+      detectedTypes = detectedTypes.filter(x=>x.name!==t.name);
+      if(activeTypeName===t.name) activeTypeName=null;
+      refreshTypeList();
+    };
+    row.appendChild(delBtn);
+
+    // click row to activate drawing
+    row.onclick = ()=>{
+      if(done) return;
+      activeTypeName = (activeTypeName===t.name) ? null : t.name;
+      if(activeTypeName) setTool('create');
+      refreshTypeList();
+    };
+
+    el.appendChild(row);
+  });
+}
+
+function addCustomType(){
+  const overlay = document.getElementById('type-dialog-overlay');
+  const sel = document.getElementById('td-cat');
+  sel.innerHTML = '';
+  for(const [k,v] of Object.entries(CATS)){
+    const opt = document.createElement('option');
+    opt.value = k; opt.textContent = v.label;
+    if(k === 'interactive') opt.selected = true;
+    sel.appendChild(opt);
+  }
+  document.getElementById('td-name').value = '';
+  document.getElementById('td-count').value = '1';
+  overlay.style.display = 'flex';
+  document.getElementById('td-name').focus();
+}
+
+function closeTypeDialog(){
+  document.getElementById('type-dialog-overlay').style.display = 'none';
+}
+
+function confirmTypeDialog(){
+  const name = document.getElementById('td-name').value.trim().toLowerCase();
+  if(!name){ alert('Enter a name.'); return; }
+  if(detectedTypes.find(t=>t.name===name)){
+    alert(`"${name}" already exists.`); return;
+  }
+  const catKey = document.getElementById('td-cat').value;
+  const count = Math.max(1, parseInt(document.getElementById('td-count').value)||1);
+  detectedTypes.push({name, category:catKey, count});
+  document.getElementById('types-panel').style.display='block';
+  refreshTypeList();
+  closeTypeDialog();
+}
+
+function placedCountForType(name){
+  return objects.filter(o=>o.typeName===name).length;
+}
+
+// Called when an object is placed from a type
+function notifyTypePlaced(typeName){
+  refreshTypeList();
+}
+
+// Called when an object is deleted — if it had a typeName, refresh counts
+function notifyTypeRemoved(typeName){
+  if(typeName) refreshTypeList();
+}
+
+// ─── obj list ──────────────────────────────────────────────────
+function refreshObjList(){
+  const el=document.getElementById('obj-list'); el.innerHTML='';
+  objects.forEach(obj=>{
+    const cat=CATS[obj.category]||CATS.unknown;
+    const row=document.createElement('div');
+    row.className='obj-row'+(obj.id===selectedId?' sel':'');
+    const doorBadge = obj.category==='door'
+      ? `<span style="font-size:9px;padding:1px 4px;border-radius:6px;background:${obj.doorOpen?'rgba(46,204,113,.2)':'rgba(231,76,60,.2)'};color:${obj.doorOpen?'var(--green)':'var(--red)'};margin-right:2px">${obj.doorOpen?'Open':'Closed'}</span>`
+      : '';
+    row.innerHTML=`<span class="cat-dot" style="background:${cat.color}"></span>
+      <span class="obj-name">${obj.name}</span>
+      ${doorBadge}
+      <span class="obj-cat-badge" style="background:${cat.color}22;color:${cat.color}">${cat.label}</span>
+      <button class="obj-del" onclick="deleteObject('${obj.id}');event.stopPropagation()">×</button>`;
+    row.onclick=()=>{ selectedId=obj.id; refreshUI(); };
+    el.appendChild(row);
+  });
+  document.getElementById('obj-count').textContent=objects.length;
+  document.getElementById('s-obj').textContent=objects.length+' objects';
+}
+
+function refreshUI(){
+  refreshObjList(); buildCatsUI(); refreshInspector(); updateStats(); refreshTypeList(); draw();
+}
+
+// ─── navmesh ───────────────────────────────────────────────────
+// cx,cy are cell indices (image-space pixel / GRID)
+function setNavCell(cx,cy,val){
+  const key=`${cx},${cy}`;
+  if(val===null) delete navmesh[key]; else navmesh[key]=val;
+  updateStats();
+}
+
+// Returns cell index for navmesh using NAV_BRUSH grid
+function navXY(x,y){
+  return {cx:Math.floor(x/NAV_BRUSH), cy:Math.floor(y/NAV_BRUSH)};
+}
+
+// Paint/erase all NAV_CELL cells covered by a NAV_BRUSH×NAV_BRUSH area at pixel (x,y)
+function paintNav(x, y, val){
+  // snap top-left of brush to NAV_BRUSH grid
+  const bx = Math.floor(x / NAV_BRUSH) * NAV_BRUSH;
+  const by = Math.floor(y / NAV_BRUSH) * NAV_BRUSH;
+  // convert to NAV_CELL indices
+  const cx0 = Math.floor(bx / NAV_CELL);
+  const cy0 = Math.floor(by / NAV_CELL);
+  const cx1 = Math.floor((bx + NAV_BRUSH - 1) / NAV_CELL);
+  const cy1 = Math.floor((by + NAV_BRUSH - 1) / NAV_CELL);
+  for(let cx = cx0; cx <= cx1; cx++){
+    for(let cy = cy0; cy <= cy1; cy++){
+      const key = `${cx},${cy}`;
+      if(val === null) delete navmesh[key]; else navmesh[key] = val;
+    }
+  }
+  updateStats();
+}
+
+function clearNavmesh(){ navmesh={}; updateStats(); draw(); }
+
+function toggleNavView(){
+  navViewOnly=!navViewOnly;
+  document.getElementById('btn-nav-view').className=navViewOnly?'btn active-green':'btn';
+  document.getElementById('nav-overlay-info').style.display=navViewOnly?'block':'none';
+  draw();
+}
+
+function updateStats(){
+  const w=Object.values(navmesh).filter(v=>v==='walk').length;
+  const b=Object.values(navmesh).filter(v=>v==='block').length;
+  document.getElementById('s-walk').textContent=w+' cam.';
+  document.getElementById('s-block').textContent=b+' bloc.';
+}
+
+// ─── hit testing (image-space) ─────────────────────────────────
+const HR=7; // handle radius px
+function getHandle(obj,x,y){
+  const corners={nw:{x:obj.x,y:obj.y},ne:{x:obj.x+obj.w,y:obj.y},
+                  sw:{x:obj.x,y:obj.y+obj.h},se:{x:obj.x+obj.w,y:obj.y+obj.h}};
+  for(const[k,h] of Object.entries(corners))
+    if(Math.abs(x-h.x)<HR+3&&Math.abs(y-h.y)<HR+3) return k;
+  return null;
+}
+
+function hitObj(x,y){
+  for(let i=objects.length-1;i>=0;i--){
+    const o=objects[i];
+    if(x>=o.x&&x<=o.x+o.w&&y>=o.y&&y<=o.y+o.h) return o;
+  }
+  return null;
+}
+
+// ─── mouse ─────────────────────────────────────────────────────
+C.addEventListener('mousedown', e=>{
+  const {x,y}=imgXY(e);
+
+  // right-click: erase nav cell under cursor (walk or block tools active, or any nav tool)
+  if(e.button===2){
+    if(tool==='walk'||tool==='block'||tool==='erase-nav'){
+      e.preventDefault();
+      isErasingNav=true;
+      paintNav(x,y,null); draw();
+    }
+    return;
+  }
+
+  if(tool==='walk'||tool==='block'||tool==='erase-nav'){
+    isDrawingNav=true;
+    const val=tool==='erase-nav'?null:(tool==='walk'?'walk':'block');
+    paintNav(x,y,val); draw(); return;
+  }
+
+  if(tool==='create'){
+    isCreating=true;
+    const sx=snapFloor(x), sy=snapFloor(y);
+    createStart={x:sx,y:sy}; createRect={x:sx,y:sy,w:0,h:0}; return;
+  }
+
+  if(tool==='select'){
+    const obj=selObj();
+    if(obj){ const h=getHandle(obj,x,y); if(h){ isResizing=true; resizeHandle=h; return; } }
+    const hit=hitObj(x,y);
+    if(hit){ selectedId=hit.id; isDragging=true; dragOff={x:x-hit.x,y:y-hit.y}; refreshUI(); return; }
+    selectedId=null; refreshUI();
+  }
+});
+
+C.addEventListener('mousemove', e=>{
+  const {x,y}=imgXY(e);
+  _mousePos={x,y};
+  const cx=Math.floor(x/SNAP_SIZE), cy=Math.floor(y/SNAP_SIZE);
+  document.getElementById('s-pos').textContent=
+    `img x:${Math.round(x)} y:${Math.round(y)} — cella ${Math.floor(x/GRID)},${Math.floor(y/GRID)}`;
+
+  if(isErasingNav){
+    paintNav(x,y,null); draw(); return;
+  }
+
+  if(isDrawingNav){
+    const val=tool==='erase-nav'?null:(tool==='walk'?'walk':'block');
+    paintNav(x,y,val); draw(); return;
+  }
+
+  if(isCreating&&createStart){
+    // snap end to grid
+    const ex=snapCeil(x), ey=snapCeil(y);
+    createRect={
+      x:Math.min(createStart.x,ex), y:Math.min(createStart.y,ey),
+      w:Math.abs(ex-createStart.x), h:Math.abs(ey-createStart.y)
+    };
+    draw(); return;
+  }
+
+  if(isDragging){
+    const obj=selObj(); if(!obj) return;
+    // snap drag to grid
+    obj.x=snapFloor(Math.max(0, x-dragOff.x));
+    obj.y=snapFloor(Math.max(0, y-dragOff.y));
+    refreshInspector(); draw(); return;
+  }
+
+  if(isResizing){
+    const obj=selObj(); if(!obj) return;
+    const {x:ox,y:oy,w:ow,h:oh}=obj;
+    const sx=snapFloor(x), sy=snapFloor(y);
+    if(resizeHandle==='se'){
+      obj.w=Math.max(SNAP_SIZE,sx-ox); obj.h=Math.max(SNAP_SIZE,sy-oy);
+    } else if(resizeHandle==='ne'){
+      obj.w=Math.max(SNAP_SIZE,sx-ox);
+      const ny=Math.min(sy, oy+oh-SNAP_SIZE); obj.h=oh+(oy-ny); obj.y=ny;
+    } else if(resizeHandle==='sw'){
+      const nx=Math.min(sx, ox+ow-SNAP_SIZE); obj.w=ow+(ox-nx); obj.x=nx;
+      obj.h=Math.max(SNAP_SIZE,sy-oy);
+    } else if(resizeHandle==='nw'){
+      const nx=Math.min(sx,ox+ow-SNAP_SIZE), ny=Math.min(sy,oy+oh-SNAP_SIZE);
+      obj.w=ow+(ox-nx); obj.x=nx; obj.h=oh+(oy-ny); obj.y=ny;
+    }
+    refreshInspector(); draw(); return;
+  }
+
+  if(tool==='select'){
+    const obj=selObj();
+    if(obj&&getHandle(obj,x,y)) C.style.cursor='nwse-resize';
+    else if(hitObj(x,y)) C.style.cursor='move';
+    else C.style.cursor='default';
+  }
+});
+
+C.addEventListener('mouseup', e=>{
+  if(isCreating&&createRect&&createRect.w>=SNAP_SIZE&&createRect.h>=SNAP_SIZE){
+    addObject(createRect.x, createRect.y, createRect.w, createRect.h);
+  }
+  isDrawingNav=false; isErasingNav=false; isDragging=false; isResizing=false; isCreating=false;
+  createStart=null; createRect=null; resizeHandle=null;
+  draw();
+});
+
+C.addEventListener('mouseleave',()=>{
+  isDrawingNav=false; isErasingNav=false; isDragging=false; isResizing=false; isCreating=false;
+  createStart=null; createRect=null; _mousePos=null; draw();
+});
+
+// ─── context menu ──────────────────────────────────────────────
+C.addEventListener('contextmenu', e=>{
+  e.preventDefault();
+  // if a nav tool is active, right-click is used for erasing — no context menu
+  if(tool==='walk'||tool==='block'||tool==='erase-nav') return;
+  const {x,y}=imgXY(e);
+  const hit=hitObj(x,y);
+  const menu=document.getElementById('ctxmenu');
+  if(!hit){ menu.style.display='none'; return; }
+  ctxTarget=hit.id; selectedId=hit.id; refreshUI();
+  menu.style.left=e.clientX+'px'; menu.style.top=e.clientY+'px';
+  menu.style.display='block';
+});
+document.addEventListener('click',()=>document.getElementById('ctxmenu').style.display='none');
+function ctxRename(){ const o=getObj(ctxTarget); if(!o) return; const n=prompt('Nuovo nome:',o.name); if(n){ o.name=n; refreshUI(); } }
+function ctxDuplicate(){ duplicateObject(ctxTarget); }
+function ctxDelete(){ deleteObject(ctxTarget); }
+
+// ─── DRAW ──────────────────────────────────────────────────────
+function draw(){
+  if(!mapImg){
+    C.width=800; C.height=600;
+    ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,C.width,C.height);
+    ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.font='14px system-ui'; ctx.textAlign='center';
+    ctx.fillText('Carica un\'immagine della mappa con il pulsante in alto',C.width/2,C.height/2-10);
+    ctx.font='12px system-ui'; ctx.fillStyle='rgba(255,255,255,0.04)';
+    ctx.fillText('oppure usa "Rileva AI" per popolare un esempio',C.width/2,C.height/2+18);
+    return;
+  }
+
+  ctx.clearRect(0,0,C.width,C.height);
+
+  // ── image ──
+  if(navViewOnly){
+    ctx.globalAlpha=0.15;
+    ctx.drawImage(mapImg,0,0,rawW,rawH, 0,0,imgW,imgH);
+    ctx.globalAlpha=1;
+  } else {
+    ctx.drawImage(mapImg,0,0,rawW,rawH, 0,0,imgW,imgH);
+  }
+
+    // ── navmesh tiles ──
+  for(const[key,val] of Object.entries(navmesh)){
+    if(val !== 'walk') continue;   // ignora completamente i blocchi
+
+    const[cx,cy]=key.split(',').map(Number);
+    const px=cx*NAV_CELL;
+    const py=cy*NAV_CELL;
+
+    ctx.fillStyle = navViewOnly
+      ? 'rgba(46,204,113,0.75)'
+      : 'rgba(46,204,113,0.28)';
+
+    ctx.fillRect(px,py,NAV_CELL,NAV_CELL);
+
+    if(navViewOnly){
+      ctx.strokeStyle='rgba(46,204,113,0.4)';
+      ctx.lineWidth=0.5;
+      ctx.strokeRect(px,py,NAV_CELL,NAV_CELL);
+    }
+  }
+
+  // ── grid lines ──
+  ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=0.5;
+  for(let x=0;x<=imgW;x+=GRID){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,imgH); ctx.stroke(); }
+  for(let y=0;y<=imgH;y+=GRID){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(imgW,y); ctx.stroke(); }
+
+  // ── objects ──
+  {
+    const drawList = navViewOnly ? objects.filter(o=>isAreaCat(o.category)) : objects;
+    drawList.forEach(obj=>{
+      const cat=CATS[obj.category]||CATS.unknown;
+      const isSel=obj.id===selectedId;
+
+      ctx.fillStyle=cat.color+'20';
+      ctx.fillRect(obj.x,obj.y,obj.w,obj.h);
+
+      ctx.strokeStyle=isSel?cat.color:cat.color+'aa';
+      ctx.lineWidth=isSel?2:1;
+      ctx.setLineDash(isSel?[]:[5,3]);
+      ctx.strokeRect(obj.x+0.5,obj.y+0.5,obj.w-1,obj.h-1);
+      ctx.setLineDash([]);
+
+      // label bar
+      const isArea = isAreaCat(obj.category);
+      const hasTag = isArea && obj.tag;
+      const hasDesc = isArea && obj.description;
+      const barH = isArea ? (hasDesc ? 42 : 30) : 17;
+      ctx.fillStyle=cat.color+'dd';
+      ctx.fillRect(obj.x,obj.y,obj.w,barH);
+      ctx.fillStyle='#fff';
+      ctx.font='bold 10px system-ui'; ctx.textAlign='left';
+      const nameLabel = hasTag ? obj.name.slice(0,20) : obj.name.slice(0,Math.floor(obj.w/6.5));
+      ctx.fillText(nameLabel, obj.x+4, obj.y+12);
+      if(hasTag){
+        ctx.font='bold 9px system-ui';
+        ctx.fillStyle='rgba(79,195,247,0.95)';
+        ctx.fillText(obj.tag.slice(0,Math.floor((obj.w-nameLabel.length*6.5-12)/5.5)), obj.x+8+nameLabel.length*6.5, obj.y+12);
+      }
+      if(hasDesc){
+        ctx.font='9px system-ui';
+        ctx.fillStyle='rgba(255,255,255,0.7)';
+        ctx.fillText(obj.description.slice(0,Math.floor(obj.w/5.5)), obj.x+4, obj.y+24);
+      }
+      if(hasTag && !hasDesc){
+        ctx.font='9px system-ui';
+        ctx.fillStyle='rgba(79,195,247,0.7)';
+        ctx.fillText(obj.tag.slice(0,Math.floor(obj.w/5.5)), obj.x+4, obj.y+24);
+      }
+
+      // blocksNav dot
+      if(obj.blocksNav){
+        ctx.fillStyle='rgba(231,76,60,0.85)';
+        ctx.beginPath(); ctx.arc(obj.x+obj.w-7,obj.y+7,4,0,Math.PI*2); ctx.fill();
+      }
+
+      // resize handles
+      if(isSel){
+        [[obj.x,obj.y],[obj.x+obj.w,obj.y],[obj.x,obj.y+obj.h],[obj.x+obj.w,obj.y+obj.h]].forEach(([hx,hy])=>{
+          ctx.fillStyle='#1a1a2e';
+          ctx.beginPath(); ctx.arc(hx,hy,HR,0,Math.PI*2); ctx.fill();
+          ctx.strokeStyle=cat.color; ctx.lineWidth=1.5; ctx.stroke();
+        });
+      }
+    });
+  }
+
+  // ── navmesh brush cursor highlight ──
+  if((tool==='walk'||tool==='block'||tool==='erase-nav')&&_mousePos){
+    const bx=Math.floor(_mousePos.x/NAV_BRUSH)*NAV_BRUSH;
+    const by=Math.floor(_mousePos.y/NAV_BRUSH)*NAV_BRUSH;
+    const erasing = isErasingNav || tool==='erase-nav';
+    ctx.strokeStyle=erasing?'rgba(255,255,255,0.7)':tool==='walk'?'rgba(46,204,113,0.9)':'rgba(231,76,60,0.9)';
+    ctx.lineWidth=1.5; ctx.setLineDash([3,2]);
+    ctx.strokeRect(bx+1,by+1,NAV_BRUSH-2,NAV_BRUSH-2);
+    ctx.setLineDash([]);
+    ctx.fillStyle=erasing?'rgba(255,255,255,0.12)':tool==='walk'?'rgba(46,204,113,0.15)':'rgba(231,76,60,0.15)';
+    ctx.fillRect(bx,by,NAV_BRUSH,NAV_BRUSH);
+  }
+  if(isCreating&&createRect&&createRect.w>=SNAP_SIZE){
+    const useCat = activeTypeName ? (detectedTypes.find(t=>t.name===activeTypeName)?.category||selectedCat) : selectedCat;
+    const cat=CATS[useCat]||CATS.unknown;
+    ctx.strokeStyle=cat.color; ctx.lineWidth=1.5;
+    ctx.setLineDash([6,3]);
+    ctx.strokeRect(createRect.x,createRect.y,createRect.w,createRect.h);
+    ctx.setLineDash([]);
+    ctx.fillStyle=cat.color+'18';
+    ctx.fillRect(createRect.x,createRect.y,createRect.w,createRect.h);
+    const label = activeTypeName || `${createRect.w}×${createRect.h}px`;
+    ctx.fillStyle=cat.color; ctx.font='bold 12px system-ui'; ctx.textAlign='center';
+    ctx.fillText(label, createRect.x+createRect.w/2, createRect.y+createRect.h/2+4);
+  }
+}
+
+// ─── JSON cleaner ──────────────────────────────────────────────
+// Handles: ```json blocks, // comments, trailing commas, bare text around JSON
+function extractJSON(raw){
+  // 1. strip markdown fences (```json ... ``` or ``` ... ```)
+  let s = raw.replace(/^```[a-z]*\s*/i,'').replace(/\s*```\s*$/,'').trim();
+
+  // 2. find the outermost { ... } block
+  const start = s.indexOf('{');
+  if(start === -1) return null;
+  // walk to find matching closing brace
+  let depth=0, end=-1;
+  for(let i=start;i<s.length;i++){
+    if(s[i]==='{') depth++;
+    else if(s[i]==='}') { depth--; if(depth===0){end=i;break;} }
+  }
+  if(end===-1) return null;
+  s = s.slice(start, end+1);
+
+  // 3. remove single-line comments  //...  (not inside strings)
+  s = s.replace(/("(?:[^"\\]|\\.)*")|\/\/[^\n]*/g, (_,str)=>str||'');
+
+  // 4. remove trailing commas before } or ]
+  s = s.replace(/,(\s*[}\]])/g, '$1');
+
+  return JSON.parse(s);   // throws if still invalid
+}
+
+// ─── LM Studio ─────────────────────────────────────────────────
+function lmModel(){ return document.getElementById('lm-model').value||'local-model'; }
+function useProxy(){ return location.protocol==='http:'||location.protocol==='https:'; }
+function lmFetch(path,opts={}){
+  return fetch((useProxy()?'/lm':document.getElementById('lm-url').value.replace(/\/$/,''))+path,opts);
+}
+function setLMStatus(s,m){
+  document.getElementById('lm-dot').className='lm-dot'+(s?' '+s:'');
+  document.getElementById('lm-status-txt').textContent=m;
+}
+async function testLM(){
+  setLMStatus('busy','Connessione...');
+  try{
+    const r=await lmFetch('/v1/models',{method:'GET',headers:{'Content-Type':'application/json'}});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    const names=(d.data||[]).map(m=>m.id).join(', ')||lmModel();
+    setLMStatus('ok',`[${useProxy()?'proxy':'diretto'}] ${names.slice(0,38)}`);
+  }catch(e){
+    setLMStatus('err',e.message+(useProxy()?'':' — usa avvia_editor.py'));
+  }
+}
+async function callLM(messages,sys){
+  const body={model:lmModel(),max_tokens:11000,stream:false,messages};
+  if(sys) body.system=sys;
+  const r=await lmFetch('/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const d=await r.json();
+  return d.choices?.[0]?.message?.content||'';
+}
+
+function openLMChat(){
+  document.getElementById('lm-overlay').classList.add('show');
+  const mode=useProxy()?'✅ Proxy attivo — nessun problema CORS.':'⚠️ Aperto da file:// — usa avvia_editor.py.';
+  addLMMsg('sys',mode);
+}
+function closeLMChat(){ document.getElementById('lm-overlay').classList.remove('show'); }
+function addLMMsg(type,text){
+  const log=document.getElementById('lm-log');
+  const d=document.createElement('div'); d.className='lm-msg '+type; d.textContent=text;
+  log.appendChild(d); log.scrollTop=log.scrollHeight;
+}
+
+async function sendLM(){
+  const inp=document.getElementById('lm-input');
+  const text=inp.value.trim(); if(!text) return;
+  inp.value=''; addLMMsg('user',text); setLMStatus('busy','Elaborazione...');
+
+  const imgMultipleOf64 = (imgW%GRID===0 && imgH%GRID===0);
+  const typesStr = detectedTypes.length
+    ? `\nDetected types (${detectedTypes.length}): `+detectedTypes.map(t=>`${t.name}×${t.count}`).join(', ')
+    : '';
+  const ctx_str=`
+Map: ${imgW}×${imgH}px, base grid ${GRID}px (${imgW/GRID}×${imgH/GRID} cells).
+Original image: ${rawW}×${rawH}px${imgMultipleOf64?'':` ⚠️ not multiple of ${GRID}px`}.
+Snap area: ${SNAP_SIZE}px.${typesStr}
+Objects placed (${objects.length}):
+${objects.map(o=>`  - "${o.name}" cat:${o.category} x:${o.x} y:${o.y} w:${o.w} h:${o.h}${o.doorOpen!==undefined?` door:${o.doorOpen?'open':'closed'}`:''}`).join('\n')||'  (none)'}
+Navmesh: ${Object.values(navmesh).filter(v=>v==='walk').length} walkable, ${Object.values(navmesh).filter(v=>v==='block').length} blocked.`.trim();
+
+  const sys=`You are a Godot 4 level design expert. Reply in the same language as the user.
+Current map context:\n${ctx_str}
+
+If the user wants to add objects, reply ONLY with this JSON (no text before/after):
+{"action":"add_objects","objects":[{"name":"...","category":"interactive","x":0,"y":0,"w":${SNAP_SIZE},"h":${SNAP_SIZE},"blocksNav":true}]}
+- All coordinates MUST be multiples of ${SNAP_SIZE} (current snap).
+- Max object size: 256×256px. Do NOT include buildings, walls, floors, or arches.
+- All furniture is "interactive". Categories: "furniture", "interactive", "deco", "unknown".
+- Image area is [0,0]–[${imgW},${imgH}]px: do not exceed these bounds.
+To reclassify: {"action":"reclassify","id":"obj_N","category":"..."}
+Otherwise reply in natural language.`;
+
+  try{
+    const resp=await callLM([{role:'user',content:text}],sys);
+    const jm=resp.match(/\{[\s\S]*"action"[\s\S]*\}/);
+    if(jm || resp.includes('"action"')){
+      try{
+        const cmd=extractJSON(resp);
+        if(!cmd) throw new Error('null');
+        if(cmd.action==='add_objects'&&Array.isArray(cmd.objects)){
+          const old=selectedCat;
+          cmd.objects.forEach(o=>{
+            selectedCat=o.category||'unknown';
+            const obj=addObject(o.x||0,o.y||0,o.w||GRID,o.h||GRID);
+            obj.name=o.name||obj.name;
+            if(o.blocksNav!==undefined) obj.blocksNav=o.blocksNav;
+          });
+          selectedCat=old;
+          addLMMsg('ai',`✅ Aggiunti ${cmd.objects.length} oggetti.\n\n${resp.replace(jm[0],'').trim()}`);
+          refreshUI();
+        } else if(cmd.action==='reclassify'){
+          const o=getObj(cmd.id);
+          if(o){ o.category=cmd.category; addLMMsg('ai',`✅ ${o.name} → ${CATS[cmd.category]?.label}`); refreshUI(); }
+        } else addLMMsg('ai',resp);
+      }catch{ addLMMsg('ai',resp); }
+    } else addLMMsg('ai',resp);
+    setLMStatus('ok','Pronto');
+  }catch(e){ addLMMsg('sys','Errore: '+e.message); setLMStatus('err','Errore'); }
+}
+
+document.getElementById('lm-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendLM(); }
+});
+
+// ─── Auto-detect: invia l'immagine reale all'LLM ───────────────
+async function runAutoDetect(){
+  if(!mapImg){ alert('Carica prima un\'immagine della mappa.'); return; }
+  if(!document.getElementById('lm-dot').classList.contains('ok')){
+    alert('LM Studio non connesso.\nPremi "Test" nel pannello LM Studio e verifica che il server sia attivo.');
+    return;
+  }
+
+  // Encode the full canvas at native resolution so LLM coordinates map 1:1 to image-space.
+  // We draw onto a temp canvas at imgW×imgH (the snapped canvas size).
+  const tmpC = document.createElement('canvas');
+  tmpC.width  = imgW;
+  tmpC.height = imgH;
+  const tmpCtx = tmpC.getContext('2d');
+  tmpCtx.drawImage(mapImg, 0, 0, rawW, rawH, 0, 0, imgW, imgH);
+  const b64 = tmpC.toDataURL('image/jpeg', 0.82).split(',')[1];
+  // sentW/sentH = exact pixel size the model will see (= imgW, imgH)
+  const sentW = imgW, sentH = imgH;
+
+  openLMChat();
+  addLMMsg('sys', `🔍 Analisi immagine in corso… (${sentW}×${sentH}px, snap ${SNAP_SIZE}px)`);
+  setLMStatus('busy', 'Analisi visiva…');
+
+  const prompt =
+    `You are analyzing a top-down or isometric map image.\n` +
+    `THE IMAGE YOU ARE SEEING IS EXACTLY ${sentW}×${sentH} PIXELS.\n` +
+    `Detect ONLY individual furniture, doors and interactive objects visible in the scene.\n` +
+    `STRICT RULES:\n` +
+    `- EXCLUDE: entire buildings, exterior walls, large floor areas, roads, fences, roofs, structural arches.\n` +
+    `- INCLUDE ONLY: individual objects a player could interact with or walk around (chairs, tables, beds, sofas, lamps, plants, chests, doors, shelves, etc.).\n` +
+    `- SIMPLIFY names: use the generic object type only, NO colors or adjectives. "blue couch" → "couch", "red chair" → "chair", "wooden table" → "table".\n` +
+    `- COUNT how many of each type you see in the image.\n` +
+    `- Categories: "interactive" for all furniture/usable objects, "door" for doors/gates/passages, "deco" for pure decoration, "unknown".\n` +
+    `Reply ONLY with this JSON, no extra text, no comments:\n` +
+    `{"action":"type_list","types":[{"name":"chair","category":"interactive","count":4},{"name":"door","category":"door","count":2}]}`;
+
+  const body = {
+    model: lmModel(),
+    max_tokens: 11000,
+    stream: false,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}` } },
+        { type: 'text', text: prompt }
+      ]
+    }]
+  };
+
+  try{
+    const r = await lmFetch('/v1/chat/completions', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    const resp = d.choices?.[0]?.message?.content || '';
+
+    const jm = resp.match(/\{[\s\S]*"action"[\s\S]*\}/);
+    if(jm || resp.includes('"action"')){
+      try{
+        const cmd = extractJSON(resp);
+        if(!cmd) throw new Error('null');
+
+        if(cmd.action==='type_list' && Array.isArray(cmd.types)){
+          // Build detected types pool — clear placed objects
+          objects=[]; navmesh={}; selectedId=null;
+          detectedTypes = cmd.types.map(t=>({
+            name: t.name||'unknown',
+            category: t.category||'interactive',
+            count: Math.max(1, t.count||1),
+          }));
+          activeTypeName = null;
+          // init sort buttons
+          document.getElementById('sort-name-btn').className='btn active';
+          document.getElementById('sort-count-btn').className='btn';
+          typeListSort='name';
+          refreshUI();
+          const total = detectedTypes.reduce((s,t)=>s+t.count,0);
+          addLMMsg('ai', `✅ Detected ${detectedTypes.length} object types (${total} total instances).\nSelect a type from the list on the right and draw rectangles on the map.`);
+
+        } else if(cmd.action==='add_objects' && Array.isArray(cmd.objects)){
+          // legacy fallback: direct placement
+          objects=[]; navmesh={};
+          const old = selectedCat;
+          const MAX_OBJ = 256;
+          let skipped = 0;
+          cmd.objects.forEach(o=>{
+            if((o.w||SNAP_SIZE) > MAX_OBJ || (o.h||SNAP_SIZE) > MAX_OBJ){ skipped++; return; }
+            selectedCat = o.category||'unknown';
+            const obj = addObject(o.x||0, o.y||0, o.w||SNAP_SIZE, o.h||SNAP_SIZE);
+            obj.name = o.name||obj.name;
+            obj.blocksNav = o.blocksNav !== undefined ? o.blocksNav : true;
+          });
+          selectedCat = old;
+          // auto-generate navmesh at NAV_CELL resolution
+          const cw=imgW/NAV_CELL, ch=imgH/NAV_CELL;
+          for(let x=0;x<cw;x++) for(let y=0;y<ch;y++) navmesh[`${x},${y}`]='walk';
+          objects.filter(o=>o.blocksNav).forEach(o=>{
+            const x1=Math.floor(o.x/NAV_CELL), y1=Math.floor(o.y/NAV_CELL);
+            const x2=Math.floor((o.x+o.w-1)/NAV_CELL), y2=Math.floor((o.y+o.h-1)/NAV_CELL);
+            for(let x=x1;x<=x2;x++) for(let y=y1;y<=y2;y++) navmesh[`${x},${y}`]='block';
+          });
+          selectedId=null; refreshUI();
+          const skipMsg = skipped ? ` (${skipped} oversized excluded)` : '';
+          addLMMsg('ai', `✅ Placed ${objects.length} objects.${skipMsg}`);
+
+        } else {
+          addLMMsg('ai', resp);
+        }
+      }catch(pe){
+        addLMMsg('ai', `⚠️ Risposta non parsabile (${pe.message}). Riprovo senza immagine o usa un modello vision.\n\n${resp.slice(0,300)}`);
+      }
+    } else {
+      addLMMsg('ai', resp.length ? resp : '⚠️ Nessun oggetto rilevato. Prova con un modello vision.');
+    }
+    setLMStatus('ok','Pronto');
+  }catch(e){
+    addLMMsg('sys','Errore: '+e.message);
+    setLMStatus('err','Errore');
+  }
+}
+
+// ─── Export Godot ──────────────────────────────────────────────
+function exportGodot(){
+  if(!objects.length && !Object.keys(navmesh).length){
+    alert('Nessun dato da esportare. Aggiungi oggetti o disegna la navmesh prima.');
+    return;
+  }
+
+  // ── Collect walkable cells + bridge through doors ──
+  const walkSet = new Set();
+  for(const [k, v] of Object.entries(navmesh)){
+    if(v === 'walk') walkSet.add(k);
+  }
+  const DOOR_MARGIN = NAV_CELL * 2;
+  objects.filter(o => o.category === 'door').forEach(d => {
+    const x0 = d.x - DOOR_MARGIN, y0 = d.y - DOOR_MARGIN;
+    const x1 = d.x + d.w + DOOR_MARGIN, y1 = d.y + d.h + DOOR_MARGIN;
+    for(let px = Math.max(0, x0); px < Math.min(imgW, x1); px += NAV_CELL){
+      for(let py = Math.max(0, y0); py < Math.min(imgH, y1); py += NAV_CELL){
+        walkSet.add(`${Math.floor(px/NAV_CELL)},${Math.floor(py/NAV_CELL)}`);
+      }
+    }
+  });
+
+  // ── Trace nav outlines from walkable cells ──
+  function traceOutlines(){
+    if(!walkSet.size) return [];
+    const edges = [];
+    for(const key of walkSet){
+      const [cx,cy] = key.split(',').map(Number);
+      const x0=cx*NAV_CELL, y0=cy*NAV_CELL, x1=x0+NAV_CELL, y1=y0+NAV_CELL;
+      if(!walkSet.has(`${cx},${cy-1}`)) edges.push([x0,y0,x1,y0]);
+      if(!walkSet.has(`${cx+1},${cy}`)) edges.push([x1,y0,x1,y1]);
+      if(!walkSet.has(`${cx},${cy+1}`)) edges.push([x1,y1,x0,y1]);
+      if(!walkSet.has(`${cx-1},${cy}`)) edges.push([x0,y1,x0,y0]);
+    }
+    const smap = new Map();
+    edges.forEach((e,i) => {
+      const k=`${e[0]},${e[1]}`;
+      if(!smap.has(k)) smap.set(k,[]);
+      smap.get(k).push(i);
+    });
+    const used = new Set(), outlines = [];
+    for(let i=0;i<edges.length;i++){
+      if(used.has(i)) continue;
+      const loop = [];
+      let idx = i;
+      while(idx!==-1 && !used.has(idx)){
+        used.add(idx);
+        loop.push([edges[idx][0], edges[idx][1]]);
+        const ek = `${edges[idx][2]},${edges[idx][3]}`;
+        const cands = smap.get(ek)||[];
+        idx = -1;
+        for(const c of cands) if(!used.has(c)){idx=c; break;}
+      }
+      if(loop.length < 3) continue;
+      const simp = [], n = loop.length;
+      for(let j=0;j<n;j++){
+        const p=loop[(j-1+n)%n], c=loop[j], nx=loop[(j+1)%n];
+        if((c[0]-p[0])*(nx[1]-c[1]) !== (c[1]-p[1])*(nx[0]-c[0])) simp.push(c);
+      }
+      if(simp.length >= 3) outlines.push(simp);
+    }
+    return outlines;
+  }
+
+  // ── Build pre-baked nav mesh (vertices + triangulated polygons) ──
+  function buildNavMesh(){
+    const vmap = new Map(), verts = [], polys = [];
+    function vid(x,y){
+      const k=`${x},${y}`;
+      if(vmap.has(k)) return vmap.get(k);
+      const i = vmap.size; vmap.set(k,i); verts.push([x,y]); return i;
+    }
+    for(const key of walkSet){
+      const [cx,cy] = key.split(',').map(Number);
+      const x0=cx*NAV_CELL, y0=cy*NAV_CELL, x1=x0+NAV_CELL, y1=y0+NAV_CELL;
+      const tl=vid(x0,y0), tr=vid(x1,y0), br=vid(x1,y1), bl=vid(x0,y1);
+      polys.push([tl,tr,br]);
+      polys.push([tl,br,bl]);
+    }
+    return {verts, polys};
+  }
+
+  const outlines = traceOutlines();
+  const navData = walkSet.size ? buildNavMesh() : null;
+
+  // ── Unique node names (Godot requires unique sibling names) ──
+  const nameCount = {};
+  objects.forEach(o => {
+    const b = o.name.replace(/[^a-zA-Z0-9_]/g,'_') || 'obj';
+    nameCount[b] = (nameCount[b]||0) + 1;
+  });
+  const nameUsed = {};
+  function uname(o){
+    const b = o.name.replace(/[^a-zA-Z0-9_]/g,'_') || 'obj';
+    if(nameCount[b] <= 1) return b;
+    nameUsed[b] = (nameUsed[b]||0) + 1;
+    return `${b}_${nameUsed[b]}`;
+  }
+
+  // ── Sub-resources ──
+  let sid = 1;
+  const subs = [];
+
+  // NavigationPolygon sub_resource
+  const navId = `NavPoly_${sid++}`;
+  let navSub = `[sub_resource type="NavigationPolygon" id="${navId}"]\n`;
+  if(outlines.length){
+    navSub += 'outlines = [' + outlines.map(ol =>
+      'PackedVector2Array(' + ol.map(([x,y])=>`${x}, ${y}`).join(', ') + ')'
+    ).join(', ') + ']\n';
+  }
+  if(navData){
+    navSub += 'vertices = PackedVector2Array(' + navData.verts.map(([x,y])=>`${x}, ${y}`).join(', ') + ')\n';
+    navSub += 'polygons = [' + navData.polys.map(([a,b,c])=>`PackedInt32Array(${a}, ${b}, ${c})`).join(', ') + ']\n';
+  }
+  subs.push(navSub);
+
+  // RectangleShape2D sub_resources for each object that needs collision
+  const objData = objects.map(o => {
+    const n = uname(o);
+    const needsShape = o.blocksNav || o.category === 'door' || isAreaCat(o.category);
+    let shapeId = null;
+    if(needsShape){
+      shapeId = `RectShape_${sid++}`;
+      subs.push(`[sub_resource type="RectangleShape2D" id="${shapeId}"]\nsize = Vector2(${o.w}, ${o.h})`);
+    }
+    return {obj:o, n, shapeId};
+  });
+
+  // ── Ask for background image path ──
+  const imgPath = prompt('Background image path in Godot (e.g. res://house.png):', 'res://house.png');
+  const hasImg = imgPath && imgPath.trim().length > 0;
+  const extRes = hasImg ? `[ext_resource type="Texture2D" path="${imgPath.trim()}" id="1_map_bg"]\n` : '';
+  const loadSteps = subs.length + 1 + (hasImg ? 1 : 0);
+
+  // ── Node tree ──
+  let nodes = '';
+  nodes += '[node name="MapRoot" type="Node2D"]\n\n';
+
+  if(hasImg){
+    nodes += '[node name="Background" type="Sprite2D" parent="."]\n';
+    nodes += 'centered = false\n';
+    nodes += 'texture = ExtResource("1_map_bg")\n\n';
+  }
+
+  nodes += `[node name="NavigationRegion2D" type="NavigationRegion2D" parent="."]\n`;
+  nodes += `navigation_polygon = SubResource("${navId}")\n\n`;
+  nodes += '[node name="Objects" type="Node2D" parent="."]\n';
+
+  objData.forEach(({obj, n, shapeId}) => {
+    const isArea = isAreaCat(obj.category);
+    const type = isArea ? 'Area2D' : (obj.category==='door' ? 'Area2D' : (obj.blocksNav ? 'StaticBody2D' : 'Node2D'));
+    const grp = isArea ? ` groups=["${obj.category}"]` : ((obj.category==='interactive' || obj.category==='door') ? ' groups=["interactive"]' : '');
+    nodes += `\n[node name="${n}" type="${type}" parent="Objects"${grp}]\n`;
+    nodes += `position = Vector2(${obj.x+obj.w/2}, ${obj.y+obj.h/2})\n`;
+    nodes += `metadata/category = "${obj.category}"\n`;
+    if(isArea){
+      const safeName = (obj.name||'').replace(/"/g,'\\"').slice(0,30);
+      const safeDesc = (obj.description||'').replace(/"/g,'\\"').slice(0,100);
+      const safeTag = (obj.tag||'').replace(/"/g,'\\"').slice(0,50);
+      nodes += `metadata/area_name = "${safeName}"\n`;
+      nodes += `metadata/area_tag = "${safeTag}"\n`;
+      nodes += `metadata/area_description = "${safeDesc}"\n`;
+    }
+    if(shapeId){
+      nodes += `\n[node name="CollisionShape2D" type="CollisionShape2D" parent="Objects/${n}"]\n`;
+      nodes += `shape = SubResource("${shapeId}")\n`;
+    }
+  });
+
+  // ── Solid wall collision for all non-walkable cells ──
+  const gridCols = Math.ceil(imgW / NAV_CELL), gridRows = Math.ceil(imgH / NAV_CELL);
+  const blocked = new Set();
+  for(let cy=0; cy<gridRows; cy++)
+    for(let cx=0; cx<gridCols; cx++)
+      if(!walkSet.has(`${cx},${cy}`)) blocked.add(`${cx},${cy}`);
+
+  const wallUsed = new Set();
+  const wallRects = [];
+  for(let cy=0; cy<gridRows; cy++){
+    for(let cx=0; cx<gridCols; cx++){
+      if(!blocked.has(`${cx},${cy}`) || wallUsed.has(`${cx},${cy}`)) continue;
+      let w=1;
+      while(cx+w<gridCols && blocked.has(`${cx+w},${cy}`) && !wallUsed.has(`${cx+w},${cy}`)) w++;
+      let h=1;
+      while(cy+h<gridRows){
+        let ok=true;
+        for(let dx=0;dx<w;dx++) if(!blocked.has(`${cx+dx},${cy+h}`) || wallUsed.has(`${cx+dx},${cy+h}`)){ok=false;break;}
+        if(!ok) break;
+        h++;
+      }
+      for(let dy=0;dy<h;dy++) for(let dx=0;dx<w;dx++) wallUsed.add(`${cx+dx},${cy+dy}`);
+      wallRects.push([cx*NAV_CELL, cy*NAV_CELL, w*NAV_CELL, h*NAV_CELL]);
+    }
+  }
+
+  nodes += '\n[node name="Walls" type="StaticBody2D" parent="."]\n';
+  wallRects.forEach(([rx,ry,rw,rh], i) => {
+    const wid = `WallShape_${sid++}`;
+    subs.push(`[sub_resource type="RectangleShape2D" id="${wid}"]\nsize = Vector2(${rw}, ${rh})`);
+    nodes += `\n[node name="W_${i}" type="CollisionShape2D" parent="Walls"]\n`;
+    nodes += `position = Vector2(${rx+rw/2}, ${ry+rh/2})\n`;
+    nodes += `shape = SubResource("${wid}")\n`;
+  });
+
+  nodes += '\n[node name="NavBlocked" type="Node2D" parent="."]\n';
+
+  // ── Assemble .tscn ──
+  let tscn = `[gd_scene load_steps=${loadSteps} format=3]\n\n`;
+  if(extRes) tscn += extRes + '\n';
+  subs.forEach(s => { tscn += s + '\n\n'; });
+  tscn += nodes;
+
+  const blob = new Blob([tscn], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='map_export.tscn'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── Export Flutter Flame ──────────────────────────────────────
+function exportFlame(){
+  if(!objects.length && !Object.keys(navmesh).length){
+    alert('Nessun dato da esportare. Aggiungi oggetti o disegna la navmesh prima.');
+    return;
+  }
+
+  // ── helpers ──────────────────────────────────────────────────
+  const dart_str  = s => `'${s.replace(/'/g,"\\'")}'`;
+  const dart_off  = (v,d) => v !== undefined ? v : d;
+
+  // ── Category → Flame component tag ───────────────────────────
+  const catTag = { furniture:'FurnitureComponent', interactive:'InteractiveComponent',
+                   door:'DoorComponent', deco:'DecoComponent', unknown:'MapObjectComponent' };
+
+  // ── Navmesh cells ─────────────────────────────────────────────
+  const walkCells = [], blockCells = [];
+  for(const [k,v] of Object.entries(navmesh)){
+    const [cx,cy] = k.split(',').map(Number);
+    (v==='walk' ? walkCells : blockCells).push([cx, cy]);
+  }
+
+  // ── Object list Dart code ─────────────────────────────────────
+  const objLines = objects.map(o => {
+    const tag  = catTag[o.category] || 'MapObjectComponent';
+    const n    = o.name.replace(/[^a-zA-Z0-9_ ]/g,' ').trim() || 'object';
+    const bl   = o.blocksNav ? 'true' : 'false';
+    const door = o.category === 'door' ? `, isOpen: ${o.doorOpen ? 'true':'false'}` : '';
+    return `    ${tag}(\n` +
+           `      name: ${dart_str(n)},\n` +
+           `      position: Vector2(${o.x + o.w/2}.0, ${o.y + o.h/2}.0),\n` +
+           `      size:     Vector2(${o.w}.0, ${o.h}.0),\n` +
+           `      category: ${dart_str(o.category)},\n` +
+           `      blocksNav: ${bl}${door},\n` +
+           `    ),`;
+  }).join('\n');
+
+  // ── Navmesh walk list ─────────────────────────────────────────
+  const walkLines  = walkCells.map(([x,y]) =>
+    `    NavCell(cx: ${x}, cy: ${y}, state: NavState.walk),`
+  ).join('\n');
+  const blockLines = blockCells.map(([x,y]) =>
+    `    NavCell(cx: ${x}, cy: ${y}, state: NavState.block),`
+  ).join('\n');
+
+  // ── Full Dart file ────────────────────────────────────────────
+  // NOTE: static parts use plain string concatenation to avoid
+  // JS interpreting Dart identifiers like position.x, size.x etc.
+  const ts = new Date().toISOString();
+
+  const dartHeader = `// ============================================================\n` +
+`// Flutter Flame — Map Export\n` +
+`// Generated by Godot Map Editor on ` + ts + `\n` +
+`// Canvas: ` + imgW + `x` + imgH + `px | Grid: ` + GRID + `px | Snap: ` + SNAP_SIZE + `px\n` +
+`// Objects: ` + objects.length + ` | Walk cells: ` + walkCells.length + ` | Block cells: ` + blockCells.length + `\n` +
+`// ============================================================\n` +
+`// USAGE\n` +
+`//   1. Copy this file into your Flutter project (e.g. lib/maps/map_data.dart)\n` +
+`//   2. Add flame to pubspec.yaml:\n` +
+`//        dependencies:\n` +
+`//          flame: ^1.x.x\n` +
+`//   3. Use MapRenderer.buildDebugComponents() to add placeholders to your game.\n` +
+`// ============================================================\n`;
+
+  // Static Dart class definitions — NO backtick interpolation here
+  const dartClasses = [
+    '',
+    "import 'package:flame/components.dart';",
+    "import 'package:flame/extensions.dart';",
+    '',
+    '// ── Enumerations ─────────────────────────────────────────────────────────────',
+    '',
+    'enum NavState { walk, block }',
+    '',
+    '// ── Data classes ─────────────────────────────────────────────────────────────',
+    '',
+    '/// A single navmesh cell (cell-space; multiply by [MapData.navCellSize] for pixels).',
+    'class NavCell {',
+    '  final int cx;',
+    '  final int cy;',
+    '  final NavState state;',
+    '  const NavCell({required this.cx, required this.cy, required this.state});',
+    '',
+    '  /// Top-left pixel position of this cell.',
+    '  Vector2 get pixelOrigin =>',
+    '      Vector2(cx * MapData.navCellSize, cy * MapData.navCellSize);',
+    '',
+    '  /// Centre pixel position of this cell.',
+    '  Vector2 get pixelCenter =>',
+    '      pixelOrigin + Vector2.all(MapData.navCellSize / 2);',
+    '',
+    '  @override',
+    "  String toString() => 'NavCell($cx,$cy ${state.name})';",
+    '}',
+    '',
+    '/// Base class for every map object.',
+    'class MapObjectComponent {',
+    '  final String name;',
+    '  final Vector2 position;   // centre, in pixels',
+    '  final Vector2 size;       // width x height, in pixels',
+    '  final String  category;',
+    '  final bool    blocksNav;',
+    '',
+    '  const MapObjectComponent({',
+    '    required this.name,',
+    '    required this.position,',
+    '    required this.size,',
+    '    required this.category,',
+    '    this.blocksNav = true,',
+    '  });',
+    '',
+    '  /// Axis-aligned bounding rect (pixel space).',
+    '  Rect get rect => Rect.fromCenter(',
+    '    center: Offset(position.x, position.y),',
+    '    width:  size.x,',
+    '    height: size.y,',
+    '  );',
+    '',
+    '  @override',
+    "  String toString() => 'MapObject($name @ ${position.x},${position.y})';",
+    '}',
+    '',
+    'class FurnitureComponent   extends MapObjectComponent {',
+    '  const FurnitureComponent({required super.name, required super.position,',
+    '    required super.size, required super.category, super.blocksNav});',
+    '}',
+    '',
+    'class InteractiveComponent extends MapObjectComponent {',
+    '  const InteractiveComponent({required super.name, required super.position,',
+    '    required super.size, required super.category, super.blocksNav});',
+    '}',
+    '',
+    'class DoorComponent        extends MapObjectComponent {',
+    '  final bool isOpen;',
+    '  const DoorComponent({required super.name, required super.position,',
+    '    required super.size, required super.category, super.blocksNav,',
+    '    this.isOpen = false});',
+    '}',
+    '',
+    'class DecoComponent        extends MapObjectComponent {',
+    '  const DecoComponent({required super.name, required super.position,',
+    '    required super.size, required super.category, super.blocksNav = false});',
+    '}',
+    '',
+  ].join('\n');
+
+  const dartMapData =
+    '// ── Map data ──────────────────────────────────────────────────────────────────\n' +
+    '\n' +
+    'class MapData {\n' +
+    '  /// Original image size in pixels.\n' +
+    '  static const double mapWidth  = ' + imgW + '.0;\n' +
+    '  static const double mapHeight = ' + imgH + '.0;\n' +
+    '\n' +
+    '  /// Base tile grid (Godot GRID constant).\n' +
+    '  static const double tileSize = ' + GRID + '.0;\n' +
+    '\n' +
+    '  /// Navmesh cell resolution in pixels.\n' +
+    '  static const double navCellSize = ' + NAV_CELL + '.0;\n' +
+    '\n' +
+    '  // ── Objects ─────────────────────────────────────────────────────────────\n' +
+    '  static const List<MapObjectComponent> objects = [\n' +
+    objLines + '\n' +
+    '  ];\n' +
+    '\n' +
+    '  // ── Navmesh — walkable cells ─────────────────────────────────────────────\n' +
+    '  static const List<NavCell> walkCells = [\n' +
+    walkLines + '\n' +
+    '  ];\n' +
+    '\n' +
+    '  // ── Navmesh — blocked cells ──────────────────────────────────────────────\n' +
+    '  static const List<NavCell> blockCells = [\n' +
+    blockLines + '\n' +
+    '  ];\n' +
+    '\n' +
+    '  // ── Convenience getters ──────────────────────────────────────────────────\n' +
+    '\n' +
+    '  /// All navmesh cells (walk + block).\n' +
+    '  static List<NavCell> get allNavCells => [...walkCells, ...blockCells];\n' +
+    '\n' +
+    '  /// Objects that block navigation.\n' +
+    '  static List<MapObjectComponent> get solidObjects =>\n' +
+    '      objects.where((o) => o.blocksNav).toList();\n' +
+    '\n' +
+    '  /// Objects filtered by category string.\n' +
+    '  static List<MapObjectComponent> byCategory(String cat) =>\n' +
+    '      objects.where((o) => o.category == cat).toList();\n' +
+    '\n' +
+    '  /// Snap a pixel position to the nearest navmesh cell index.\n' +
+    '  static (int cx, int cy) pixelToCell(double px, double py) =>\n' +
+    '      ((px / navCellSize).floor(), (py / navCellSize).floor());\n' +
+    '\n' +
+    '  /// Returns true if the cell at (cx, cy) is walkable.\n' +
+    '  static bool isCellWalkable(int cx, int cy) {\n' +
+    '    for (final c in blockCells) {\n' +
+    '      if (c.cx == cx && c.cy == cy) return false;\n' +
+    '    }\n' +
+    '    return true;\n' +
+    '  }\n' +
+    '}\n';
+
+  const dartRenderer = [
+    '',
+    '// ── MapRenderer helper ────────────────────────────────────────────────────────',
+    '// Example:',
+    '//   @override',
+    '//   Future<void> onLoad() async {',
+    '//     addAll(MapRenderer.buildDebugComponents());',
+    '//   }',
+    '',
+    'class MapRenderer {',
+    '  /// Returns a [RectangleComponent] for every map object (debug/placeholder).',
+    '  static List<RectangleComponent> buildDebugComponents() {',
+    '    return MapData.objects.map((obj) {',
+    '      final color = _categoryColor(obj.category);',
+    '      return RectangleComponent(',
+    '        position: obj.position - obj.size / 2,',
+    '        size:     obj.size,',
+    '        paint:    Paint()..color = color.withOpacity(0.55),',
+    '      );',
+    '    }).toList();',
+    '  }',
+    '',
+    '  static Color _categoryColor(String cat) {',
+    '    switch (cat) {',
+    "      case 'furniture':   return const Color(0xFF3498db);",
+    "      case 'interactive': return const Color(0xFF1abc9c);",
+    "      case 'door':        return const Color(0xFFf39c12);",
+    "      case 'deco':        return const Color(0xFFe91e8c);",
+    '      default:            return const Color(0xFFe74c3c);',
+    '    }',
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+
+  const dart = dartHeader + dartClasses + dartMapData + dartRenderer;
+
+  const blob = new Blob([dart], {type:'text/plain;charset=utf-8'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'map_data.dart';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── save / load project ───────────────────────────────────────
+function saveProject(){
+  if(!mapImg){ alert('Load a map image first.'); return; }
+
+  // embed the image as base64 so the project is self-contained
+  const tmpC = document.createElement('canvas');
+  tmpC.width = rawW; tmpC.height = rawH;
+  tmpC.getContext('2d').drawImage(mapImg, 0, 0);
+  const imgData = tmpC.toDataURL('image/png');   // lossless
+
+  const project = {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    image: {
+      data: imgData,
+      rawW, rawH, imgW, imgH,
+    },
+    objects,
+    navmesh,
+    detectedTypes,
+    idCounter,
+    selectedCat,
+    typeListSort,
+  };
+
+  const json = JSON.stringify(project);
+  const blob = new Blob([json], {type:'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  // suggest a filename based on image size + date
+  const ts   = new Date().toISOString().slice(0,16).replace('T','_').replace(':','-');
+  a.href     = url;
+  a.download = `map_project_${ts}.gmproj`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function loadProject(input){
+  const file = input.files[0]; if(!file) return;
+  input.value = '';   // reset so same file can be re-loaded
+  const reader = new FileReader();
+  reader.onload = ev => {
+    let project;
+    try { project = JSON.parse(ev.target.result); }
+    catch(e){ alert('Invalid project file: ' + e.message); return; }
+
+    if(!project.version || !project.image?.data){
+      alert('Unrecognised file format. Expected a .gmproj file saved by this editor.');
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      // restore image state
+      rawW  = project.image.rawW;
+      rawH  = project.image.rawH;
+      imgW  = project.image.imgW;
+      imgH  = project.image.imgH;
+      C.width  = imgW;
+      C.height = imgH;
+      mapImg   = img;
+
+      // restore editor state
+      objects       = project.objects       || [];
+      navmesh       = project.navmesh       || {};
+      detectedTypes = project.detectedTypes || [];
+      idCounter     = project.idCounter     || (objects.length + 1);
+      selectedCat   = project.selectedCat   || 'furniture';
+      typeListSort  = project.typeListSort  || 'name';
+      selectedId    = null;
+      activeTypeName= null;
+
+      document.getElementById('img-info').textContent =
+        `${imgW}×${imgH}px (${imgW/GRID}×${imgH/GRID} celle)`;
+      document.getElementById('s-imgsize').textContent =
+        `image: ${rawW}×${rawH} → canvas: ${imgW}×${imgH} (grid ${GRID}px)`;
+
+      // restore sort button state
+      document.getElementById('sort-name-btn').className = 'btn'+(typeListSort==='name'?' active':'');
+      document.getElementById('sort-count-btn').className = 'btn'+(typeListSort==='count'?' active':'');
+
+      refreshUI();
+      const objCount  = objects.length;
+      const typeCount = detectedTypes.length;
+      console.log(`Project loaded: ${objCount} objects, ${typeCount} types, saved ${project.savedAt}`);
+    };
+    img.src = project.image.data;
+  };
+  reader.readAsText(file);
+}
+
+// ─── keyboard ──────────────────────────────────────────────────
+function setNavBrush(size){
+  NAV_BRUSH = Math.max(NAV_BRUSH_MIN, Math.min(NAV_BRUSH_MAX, size));
+  // update status bar hint
+  const el = document.getElementById('s-tool');
+  const names={select:'Select / Move',create:'Create object',walk:'Walkable',block:'Block','erase-nav':'Erase nav'};
+  const navTools = ['walk','block','erase-nav'];
+  if(navTools.includes(tool)){
+    el.textContent = `Tool: ${names[tool]} — brush ${NAV_BRUSH}px`;
+  }
+  draw();
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+  if(e.ctrlKey&&e.key==='s'){ e.preventDefault(); saveProject(); return; }
+
+  // numpad +/- resize nav brush (only when a nav tool is active)
+  if(e.code==='NumpadAdd'||e.key==='+'){
+    if(tool==='walk'||tool==='block'||tool==='erase-nav'){
+      e.preventDefault(); setNavBrush(NAV_BRUSH + NAV_BRUSH_STEP);
+    }
+    return;
+  }
+  if(e.code==='NumpadSubtract'||e.key==='-'){
+    if(tool==='walk'||tool==='block'||tool==='erase-nav'){
+      e.preventDefault(); setNavBrush(NAV_BRUSH - NAV_BRUSH_STEP);
+    }
+    return;
+  }
+
+  if(e.key==='Delete'||e.key==='Backspace'){ if(selectedId) deleteObject(selectedId); }
+  if(e.key==='Escape'){ selectedId=null; setTool('select'); refreshUI(); }
+  if(e.ctrlKey&&e.key==='d'&&selectedId){ e.preventDefault(); duplicateObject(selectedId); }
+  if(e.key==='1') setTool('select');
+  if(e.key==='2') setTool('create');
+  if(e.key==='3') setTool('walk');
+  if(e.key==='4') setTool('block');
+  if(e.key==='5') setTool('erase-nav');
+  if(e.key==='n') toggleNavView();
+});
+
+// ─── init ──────────────────────────────────────────────────────
+if(location.protocol==='file:')
+  document.getElementById('cors-warn').style.display='block';
+setTool('select');
+buildCatsUI();
+refreshUI();
+</script>
+</body>
+</html>

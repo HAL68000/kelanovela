@@ -388,6 +388,7 @@ let typeListSort   = 'name'; // 'name' | 'count'
 const CATS = {
   room:        {label:'Room',         color:'#9b59b6'},
   hallway:     {label:'Hallway',      color:'#8e44ad'},
+  spawn:       {label:'Spawn Area',   color:'#27ae60'},
   furniture:   {label:'Furniture',    color:'#3498db'},
   interactive: {label:'Interactive',  color:'#1abc9c'},
   door:        {label:'Door',         color:'#f39c12'},
@@ -534,7 +535,7 @@ function addObject(ix,iy,iw,ih){
     id:newId(),
     name: useName || `${cat.label} ${idCounter}`,
     category: useCat, x, y, w, h,
-    blocksNav: useCat !== 'room' && useCat !== 'hallway',
+    blocksNav: !isAreaCat(useCat),
     ...(useName ? {typeName: useName} : {}),
     ...(useCat==='door' ? {doorOpen: false} : {}),
     ...(isAreaCat(useCat) ? {description: '', tag: ''} : {}),
@@ -605,7 +606,7 @@ function refreshInspector(){
   }
 }
 
-function isAreaCat(c){ return c==='room'||c==='hallway'; }
+function isAreaCat(c){ return c==='room'||c==='hallway'||c==='spawn'; }
 
 function updateSelected(key,val){
   const obj=selObj(); if(!obj) return;

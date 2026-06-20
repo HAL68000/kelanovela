@@ -25,4 +25,4 @@ Un gioco top-down 2D creato con Godot Engine.
 - Personaggio controllabile
 - Telecamera che segue il personaggio
 - Sistema di interazione con oggetti
-addd
+addwawdd

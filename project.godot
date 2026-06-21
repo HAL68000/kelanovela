@@ -11,9 +11,15 @@ config_version=5
 [application]
 
 config/name="Kelanovela"
-run/main_scene="res://scenes/Main.tscn"
-config/features=PackedStringArray("4.6", "Mobile")
+run/main_scene="res://scenes/ui/MainMenu.tscn"
+config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
+
+[autoload]
+
+GameState="*res://autoload/GameState.gd"
+LLMService="*res://autoload/LLMService.gd"
+InvokeService="*res://autoload/InvokeService.gd"
 
 [display]
 

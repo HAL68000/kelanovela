@@ -13,13 +13,6 @@ func _ready():
 	nav_agent.path_desired_distance = 8.0
 	nav_agent.target_desired_distance = 12.0
 	nav_agent.avoidance_enabled = false
-	_move_to_spawn_area()
-
-func _move_to_spawn_area():
-	for area in get_tree().get_nodes_in_group("spawn"):
-		if area.get_meta("area_tag", "") == "#entrance":
-			global_position = area.global_position
-			return
 
 func _unhandled_input(event):
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:

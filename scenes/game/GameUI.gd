@@ -5,7 +5,7 @@ extends CanvasLayer
 ## Text in Italian.
 
 signal chat_action_requested(action: Dictionary)
-signal photo_requested(camera_angle: String, aspect_ratio: String)
+signal photo_requested(camera_angle: String, aspect_ratio: String, extra_details: String)
 signal inventory_item_used(item_name: String)
 signal character_sheet_requested
 
@@ -71,6 +71,12 @@ var _photo_popup: PanelContainer
 var _photo_texture_rect: TextureRect
 var _photo_close_button: Button
 
+# Photo request modal
+var _photo_modal: PanelContainer
+var _photo_details_edit: TextEdit
+var _photo_modal_angle: OptionButton
+var _photo_modal_ratio: OptionButton
+
 # Photo gallery
 var _gallery_panel: PanelContainer
 var _gallery_container: VBoxContainer
@@ -108,6 +114,7 @@ func _build_ui() -> void:
 	_build_bottom_bar()
 	_build_photo_gallery()
 	_build_photo_popup()
+	_build_photo_modal()
 	_build_interaction_hint()
 	_build_loading_indicator()
 
@@ -459,6 +466,122 @@ func _build_photo_popup() -> void:
 	vbox.add_child(_photo_texture_rect)
 
 
+func _build_photo_modal() -> void:
+	_photo_modal = PanelContainer.new()
+	_photo_modal.name = "PhotoModal"
+	_photo_modal.set_anchors_preset(Control.PRESET_CENTER)
+	_photo_modal.offset_left = -300
+	_photo_modal.offset_right = 300
+	_photo_modal.offset_top = -220
+	_photo_modal.offset_bottom = 220
+	_photo_modal.add_theme_stylebox_override("panel", _make_flat_style(COL_BG, 2, COL_ACCENT, 10, 10, 10, 10))
+	_photo_modal.visible = false
+	_photo_modal.mouse_filter = Control.MOUSE_FILTER_STOP
+	_photo_modal.z_index = 90
+	_root.add_child(_photo_modal)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 16)
+	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	_photo_modal.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	margin.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "Scatta Foto"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", COL_ACCENT)
+	vbox.add_child(title)
+
+	# Details text area
+	var desc := Label.new()
+	desc.text = "Descrivi dettagli aggiuntivi per la scena (opzionale):"
+	desc.add_theme_font_size_override("font_size", 14)
+	desc.add_theme_color_override("font_color", COL_DIM)
+	vbox.add_child(desc)
+
+	_photo_details_edit = TextEdit.new()
+	_photo_details_edit.placeholder_text = "es. il personaggio è seduto su una poltrona, sta leggendo un libro..."
+	_photo_details_edit.custom_minimum_size = Vector2(0, 100)
+	_photo_details_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_photo_details_edit.add_theme_font_size_override("font_size", 16)
+	_photo_details_edit.add_theme_color_override("font_color", COL_TEXT)
+	_photo_details_edit.add_theme_color_override("font_placeholder_color", Color(1, 1, 1, 0.3))
+	_photo_details_edit.add_theme_stylebox_override("normal", _make_flat_style(COL_INPUT_BG, 1, COL_BORDER, 4, 4, 4, 4))
+	_photo_details_edit.add_theme_stylebox_override("focus", _make_flat_style(COL_INPUT_BG, 1, COL_ACCENT, 4, 4, 4, 4))
+	vbox.add_child(_photo_details_edit)
+
+	# Angle + Ratio row
+	var opts_row := HBoxContainer.new()
+	opts_row.add_theme_constant_override("separation", 12)
+	vbox.add_child(opts_row)
+
+	var angle_lbl := Label.new()
+	angle_lbl.text = "Angolo:"
+	angle_lbl.add_theme_font_size_override("font_size", 14)
+	angle_lbl.add_theme_color_override("font_color", COL_DIM)
+	angle_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	opts_row.add_child(angle_lbl)
+
+	_photo_modal_angle = OptionButton.new()
+	for a in CAMERA_ANGLES:
+		_photo_modal_angle.add_item(a)
+	_photo_modal_angle.selected = 0
+	_photo_modal_angle.add_theme_font_size_override("font_size", 13)
+	_photo_modal_angle.add_theme_color_override("font_color", COL_TEXT)
+	_photo_modal_angle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	opts_row.add_child(_photo_modal_angle)
+
+	var ratio_lbl := Label.new()
+	ratio_lbl.text = "Ratio:"
+	ratio_lbl.add_theme_font_size_override("font_size", 14)
+	ratio_lbl.add_theme_color_override("font_color", COL_DIM)
+	ratio_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	opts_row.add_child(ratio_lbl)
+
+	_photo_modal_ratio = OptionButton.new()
+	for r in ASPECT_RATIOS:
+		_photo_modal_ratio.add_item(r)
+	_photo_modal_ratio.selected = 0
+	_photo_modal_ratio.add_theme_font_size_override("font_size", 13)
+	_photo_modal_ratio.add_theme_color_override("font_color", COL_TEXT)
+	_photo_modal_ratio.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	opts_row.add_child(_photo_modal_ratio)
+
+	# Buttons row
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 12)
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(btn_row)
+
+	var shoot_btn := _make_button("Scatta", COL_ACCENT)
+	shoot_btn.custom_minimum_size = Vector2(160, 40)
+	shoot_btn.pressed.connect(_on_photo_modal_confirm)
+	btn_row.add_child(shoot_btn)
+
+	var cancel_btn := _make_button("Annulla", COL_BUTTON_BG)
+	cancel_btn.custom_minimum_size = Vector2(120, 40)
+	cancel_btn.pressed.connect(_on_photo_modal_cancel)
+	btn_row.add_child(cancel_btn)
+
+
+func _on_photo_modal_confirm() -> void:
+	var angle: String = CAMERA_ANGLES[_photo_modal_angle.selected] if _photo_modal_angle.selected >= 0 else "Eye-Level Angle"
+	var ratio: String = ASPECT_RATIOS[_photo_modal_ratio.selected] if _photo_modal_ratio.selected >= 0 else "4:3"
+	var details: String = _photo_details_edit.text.strip_edges()
+	_photo_modal.visible = false
+	photo_requested.emit(angle, ratio, details)
+
+
+func _on_photo_modal_cancel() -> void:
+	_photo_modal.visible = false
+
+
 func _build_interaction_hint() -> void:
 	_hint_label = Label.new()
 	_hint_label.name = "InteractionHint"
@@ -758,9 +881,11 @@ func _on_character_sheet_pressed() -> void:
 
 
 func _on_photo_pressed() -> void:
-	var angle: String = CAMERA_ANGLES[_camera_angle_option.selected] if _camera_angle_option.selected >= 0 else "Eye-Level Angle"
-	var ratio: String = ASPECT_RATIOS[_aspect_ratio_option.selected] if _aspect_ratio_option.selected >= 0 else "4:3"
-	photo_requested.emit(angle, ratio)
+	# Sync bottom bar selections to modal
+	_photo_modal_angle.selected = _camera_angle_option.selected
+	_photo_modal_ratio.selected = _aspect_ratio_option.selected
+	_photo_details_edit.text = ""
+	_photo_modal.visible = true
 
 
 func _on_photo_close() -> void:

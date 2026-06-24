@@ -834,6 +834,7 @@ func _refresh_outfit_label() -> void:
 
 func _equip_item(item_name: String, slot: String) -> void:
 	var pc: Dictionary = _get_char_data()
+	var char_name: String = pc.get("name", "")
 	var state_key := "slot_%s" % slot
 
 	# Unequip current item in that slot first
@@ -844,13 +845,15 @@ func _equip_item(item_name: String, slot: String) -> void:
 	# Move item from inventory to slot
 	pc[state_key] = item_name
 
-	# Update item location in objects
+	# Update item location and owner in objects
 	for i in range(GameState.objects.size()):
 		if GameState.objects[i].get("name", "") == item_name:
 			GameState.objects[i]["location"] = "equipped"
+			GameState.objects[i]["owner"] = char_name
 			break
 
-	# Update outfit array
+	if _mode == "npc":
+		GameState.add_npc(pc)
 	_sync_outfit_array()
 	_refresh_all()
 	_emit_outfit_changed()
@@ -858,6 +861,7 @@ func _equip_item(item_name: String, slot: String) -> void:
 
 func _unequip_item(slot: String) -> void:
 	var pc: Dictionary = _get_char_data()
+	var char_name: String = pc.get("name", "")
 	var state_key := "slot_%s" % slot
 	var item_name: String = pc.get(state_key, "")
 	if item_name == "":
@@ -865,21 +869,21 @@ func _unequip_item(slot: String) -> void:
 
 	pc[state_key] = ""
 
-	# Move item back to inventory
+	# Move item back to inventory, keep owner
+	var found := false
 	for i in range(GameState.objects.size()):
 		if GameState.objects[i].get("name", "") == item_name:
 			GameState.objects[i]["location"] = "inventory"
-			break
-
-	# If item doesn't exist in objects, add it
-	var found := false
-	for obj in GameState.objects:
-		if obj.get("name", "") == item_name:
+			GameState.objects[i]["owner"] = char_name
 			found = true
 			break
-	if not found:
-		GameState.objects.append({"name": item_name, "description": "", "category": "", "location": "inventory"})
 
+	# If item doesn't exist in objects, recreate it
+	if not found:
+		GameState.objects.append({"name": item_name, "description": "", "category": "", "location": "inventory", "owner": char_name})
+
+	if _mode == "npc":
+		GameState.add_npc(pc)
 	_sync_outfit_array()
 	_refresh_all()
 	_emit_outfit_changed()

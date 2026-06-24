@@ -194,10 +194,24 @@ func _build_character_tag(c: Dictionary) -> String:
 		parts.append(breast + " breasts")
 
 	var outfit: Array = c.get("outfit", [])
-	if outfit.size() > 0:
-		parts.append("wearing " + ", ".join(outfit))
+	var outfit_clean: Array = []
+	for piece in outfit:
+		var p: String = str(piece).strip_edges()
+		if p != "":
+			outfit_clean.append(p)
+
+	if outfit_clean.size() > 0:
+		var outfit_str := ", ".join(outfit_clean)
+		var lower := outfit_str.to_lower()
+		if lower == "naked" or lower == "nude" or lower == "undressed":
+			parts.append("naked")
+		else:
+			parts.append("wearing " + outfit_str)
+	else:
+		parts.append("naked")
+
 	var desc: String = c.get("description", c.get("physical_traits", "")).strip_edges()
-	if desc != "" and outfit.is_empty():
+	if desc != "":
 		parts.append(desc)
 
 	return ", ".join(parts)

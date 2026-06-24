@@ -510,8 +510,8 @@ func _action_move_player(params: Dictionary) -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 # Photo Feature
 # ══════════════════════════════════════════════════════════════════════════════
-
-func take_photo(camera_angle: String = "Eye-Level Angle", aspect_ratio: String = "4:3") -> void:
+	
+func take_photo(camera_angle: String = "Eye-Level Angle", aspect_ratio: String = "4:3", extra_details: String = "") -> void:
 	if _photo_in_progress:
 		_ui.add_chat_message("Sistema", "Foto in elaborazione, attendi...", Color("4fc3f7"))
 		return
@@ -537,6 +537,8 @@ func take_photo(camera_angle: String = "Eye-Level Angle", aspect_ratio: String =
 	# 1. Gather scene context
 	var room_desc := _current_room_desc if _current_room_desc != "" else _current_room_name
 	var scene_description := "Location: %s. %s" % [_current_room_name, room_desc]
+	if extra_details != "":
+		scene_description += " Additional details: %s" % extra_details
 
 	var characters: Array = []
 
@@ -718,18 +720,17 @@ func _update_inventory_ui() -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _build_character_composite(char_name: String) -> Image:
-	# Collect all images for this character: face + equipped item images
-	var images: Array = []  # Array of Image
+	var images: Array = []
 
-	# Determine if player or NPC
 	var is_player: bool = char_name == GameState.player_character.get("name", "")
 	var char_data: Dictionary = GameState.player_character if is_player else GameState.get_npc(char_name)
 
-	# Face image
+	# Face image first
 	var face_path: String = char_data.get("image_path", "")
 	if face_path != "":
 		var face_img := Image.new()
 		if face_img.load(face_path) == OK:
+			face_img.convert(Image.FORMAT_RGBA8)
 			images.append(face_img)
 
 	# Equipped item images
@@ -741,52 +742,135 @@ func _build_character_composite(char_name: String) -> Image:
 			if obj.get("name", "") == item_name and obj.get("image_path", "") != "":
 				var item_img := Image.new()
 				if item_img.load(obj["image_path"]) == OK:
+					item_img.convert(Image.FORMAT_RGBA8)
 					images.append(item_img)
 				break
 
 	if images.is_empty():
 		return null
 
-	# Layout images on a white canvas, max 1200x1200
-	var max_canvas := 1200
-	var count: int = images.size()
+	# Convert all to RGBA8 and scale down if needed
+	var max_side := 1200
+	for i in range(images.size()):
+		var img: Image = images[i]
+		var sf: float = minf(float(max_side) / img.get_width(), float(max_side) / img.get_height())
+		if sf < 1.0:
+			img.resize(maxi(1, int(img.get_width() * sf)), maxi(1, int(img.get_height() * sf)))
 
+	var count: int = images.size()
 	if count == 1:
-		# Single image: just scale to fit
 		var img: Image = images[0]
-		var scale_factor: float = minf(float(max_canvas) / img.get_width(), float(max_canvas) / img.get_height())
-		if scale_factor < 1.0:
-			img.resize(int(img.get_width() * scale_factor), int(img.get_height() * scale_factor))
-		var canvas := Image.create(img.get_width(), img.get_height(), false, Image.FORMAT_RGBA8)
+		var cw: int = img.get_width() + 20
+		var ch: int = img.get_height() + 20
+		var canvas := Image.create(cw, ch, false, Image.FORMAT_RGBA8)
 		canvas.fill(Color.WHITE)
-		canvas.blit_rect(img, Rect2i(0, 0, img.get_width(), img.get_height()), Vector2i.ZERO)
+		_composite_blit(canvas, img, 10, 10)
 		return canvas
 
-	# Multiple images: arrange in a grid
-	var cols: int = ceili(sqrt(float(count)))
-	var rows: int = ceili(float(count) / cols)
-	var cell_w: int = max_canvas / cols
-	var cell_h: int = max_canvas / rows
-	var canvas_w: int = cell_w * cols
-	var canvas_h: int = cell_h * rows
+	# Layout: face on the left, items stacked on the right (like the reference image)
+	var face: Image = images[0]
+	var right_items: Array = images.slice(1)
+	var right_count: int = right_items.size()
+	var right_cols: int = 1 if right_count <= 2 else 2
+	var right_rows_count: int = ceili(float(right_count) / right_cols)
+
+	# Compute right side cell sizes
+	var col_widths: Array = []
+	var row_heights: Array = []
+	for _c in range(right_cols):
+		col_widths.append(0)
+	for _r in range(right_rows_count):
+		row_heights.append(0)
+	for idx in range(right_count):
+		var ri: Image = right_items[idx]
+		var c: int = idx % right_cols
+		var r: int = idx / right_cols
+		if ri.get_width() > col_widths[c]:
+			col_widths[c] = ri.get_width()
+		if ri.get_height() > row_heights[r]:
+			row_heights[r] = ri.get_height()
+
+	var right_w: int = 0
+	for w: int in col_widths:
+		right_w += w
+	right_w += (right_cols - 1) * 10
+
+	var right_h: int = 0
+	for h: int in row_heights:
+		right_h += h
+	right_h += (right_rows_count - 1) * 10
+
+	var gap := 15
+	var pad := 10
+	var canvas_w: int = face.get_width() + gap + right_w + pad * 2
+	var canvas_h: int = maxi(face.get_height(), right_h) + pad * 2
+
+	# Shrink if canvas exceeds 1200x1200
+	var canvas_scale: float = minf(1200.0 / canvas_w, 1200.0 / canvas_h)
+	if canvas_scale < 1.0:
+		canvas_w = int(canvas_w * canvas_scale)
+		canvas_h = int(canvas_h * canvas_scale)
+		face.resize(maxi(1, int(face.get_width() * canvas_scale)), maxi(1, int(face.get_height() * canvas_scale)))
+		for i in range(right_count):
+			var ri: Image = right_items[i]
+			ri.resize(maxi(1, int(ri.get_width() * canvas_scale)), maxi(1, int(ri.get_height() * canvas_scale)))
+		for c in range(right_cols):
+			col_widths[c] = int(col_widths[c] * canvas_scale)
+		for r in range(right_rows_count):
+			row_heights[r] = int(row_heights[r] * canvas_scale)
+		right_w = int(right_w * canvas_scale)
+		right_h = int(right_h * canvas_scale)
 
 	var canvas := Image.create(canvas_w, canvas_h, false, Image.FORMAT_RGBA8)
 	canvas.fill(Color.WHITE)
 
-	for i in range(count):
-		var img: Image = images[i].duplicate()
-		var col: int = i % cols
-		var row: int = i / cols
-		# Scale image to fit in cell
-		var scale_factor: float = minf(float(cell_w) / img.get_width(), float(cell_h) / img.get_height())
-		if scale_factor < 1.0 or scale_factor > 1.0:
-			img.resize(maxi(1, int(img.get_width() * scale_factor)), maxi(1, int(img.get_height() * scale_factor)))
-		# Center in cell
-		var ox: int = col * cell_w + (cell_w - img.get_width()) / 2
-		var oy: int = row * cell_h + (cell_h - img.get_height()) / 2
-		canvas.blit_rect(img, Rect2i(0, 0, img.get_width(), img.get_height()), Vector2i(ox, oy))
+	# Face on the left, vertically centered
+	var face_y: int = (canvas_h - face.get_height()) / 2
+	_composite_blit(canvas, face, pad, maxi(pad, face_y))
 
+	# Right items
+	var rx_start: int = pad + face.get_width() + gap
+	var ry_start: int = (canvas_h - right_h) / 2
+	var cur_y: int = maxi(pad, ry_start)
+	for r in range(right_rows_count):
+		var cur_x: int = rx_start
+		for c in range(right_cols):
+			var idx: int = r * right_cols + c
+			if idx >= right_count:
+				break
+			var ri: Image = right_items[idx]
+			var cx: int = cur_x + (col_widths[c] - ri.get_width()) / 2
+			var cy: int = cur_y + (row_heights[r] - ri.get_height()) / 2
+			_composite_blit(canvas, ri, cx, cy)
+			cur_x += col_widths[c] + int(10 * (canvas_scale if canvas_scale < 1.0 else 1.0))
+		cur_y += row_heights[r] + int(10 * (canvas_scale if canvas_scale < 1.0 else 1.0))
+
+	print("InvokeService: composite %d images → %dx%d canvas" % [count, canvas_w, canvas_h])
 	return canvas
+
+
+func _composite_blit(canvas: Image, src: Image, x: int, y: int) -> void:
+	for py in range(src.get_height()):
+		var dy: int = y + py
+		if dy < 0 or dy >= canvas.get_height():
+			continue
+		for px in range(src.get_width()):
+			var dx: int = x + px
+			if dx < 0 or dx >= canvas.get_width():
+				continue
+			var sc: Color = src.get_pixel(px, py)
+			if sc.a < 0.01:
+				continue
+			if sc.a >= 0.99:
+				canvas.set_pixel(dx, dy, sc)
+			else:
+				var bg: Color = canvas.get_pixel(dx, dy)
+				canvas.set_pixel(dx, dy, Color(
+					bg.r * (1.0 - sc.a) + sc.r * sc.a,
+					bg.g * (1.0 - sc.a) + sc.g * sc.a,
+					bg.b * (1.0 - sc.a) + sc.b * sc.a,
+					1.0
+				))
 
 
 func _find_area_position(tag_or_name: String) -> Vector2:

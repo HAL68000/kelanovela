@@ -266,7 +266,7 @@ select.insp-val option{background:var(--bg)}
       </div>
       <div class="insp-row" id="insp-room-desc-row" style="display:none">
         <span class="insp-label">Desc</span>
-        <input class="insp-val" id="insp-desc" type="text" maxlength="100" placeholder="Room description (max 100)" oninput="updateSelected('description',this.value)">
+        <input class="insp-val" id="insp-desc" type="text" maxlength="300" placeholder="Room description (max 300)" oninput="updateSelected('description',this.value)">
       </div>
       <div class="insp-row" id="insp-room-tag-row" style="display:none">
         <span class="insp-label">Tag</span>
@@ -598,7 +598,7 @@ function refreshInspector(){
     roomCounter.style.display='block';
     document.getElementById('insp-desc').value=obj.description||'';
     document.getElementById('insp-tag').value=obj.tag||'';
-    roomCounter.textContent=`Name: ${(obj.name||'').length}/30 — Tag: ${(obj.tag||'').length}/50 — Desc: ${(obj.description||'').length}/100`;
+    roomCounter.textContent=`Name: ${(obj.name||'').length}/30 — Tag: ${(obj.tag||'').length}/50 — Desc: ${(obj.description||'').length}/300`;
   } else {
     roomDescRow.style.display='none';
     roomTagRow.style.display='none';
@@ -614,7 +614,7 @@ function updateSelected(key,val){
     val = key==='w'||key==='h' ? Math.max(SNAP_SIZE, snapRound(+val)) : snapFloor(+val);
   }
   if(key==='name' && isAreaCat(obj.category)) val = (val||'').slice(0,30);
-  if(key==='description') val = (val||'').slice(0,100);
+  if(key==='description') val = (val||'').slice(0,300);
   if(key==='tag') val = (val||'').slice(0,50);
 
   // Handle category change
@@ -640,7 +640,7 @@ function updateSelected(key,val){
     document.getElementById('insp-door-label').textContent=val?'Open':'Closed';
   }
   if((key==='name'||key==='description'||key==='tag') && isAreaCat(obj.category)){
-    document.getElementById('insp-room-counter').textContent=`Name: ${(obj.name||'').length}/30 — Tag: ${(obj.tag||'').length}/50 — Desc: ${(obj.description||'').length}/100`;
+    document.getElementById('insp-room-counter').textContent=`Name: ${(obj.name||'').length}/30 — Tag: ${(obj.tag||'').length}/50 — Desc: ${(obj.description||'').length}/300`;
   }
   refreshUI();
 }
@@ -1563,7 +1563,7 @@ function exportGodot(){
     nodes += `metadata/category = "${obj.category}"\n`;
     if(isArea){
       const safeName = (obj.name||'').replace(/"/g,'\\"').slice(0,30);
-      const safeDesc = (obj.description||'').replace(/"/g,'\\"').slice(0,100);
+      const safeDesc = (obj.description||'').replace(/"/g,'\\"').slice(0,300);
       const safeTag = (obj.tag||'').replace(/"/g,'\\"').slice(0,50);
       nodes += `metadata/area_name = "${safeName}"\n`;
       nodes += `metadata/area_tag = "${safeTag}"\n`;

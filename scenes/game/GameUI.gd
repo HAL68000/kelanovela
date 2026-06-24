@@ -5,8 +5,9 @@ extends CanvasLayer
 ## Text in Italian.
 
 signal chat_action_requested(action: Dictionary)
-signal photo_requested
+signal photo_requested(camera_angle: String, aspect_ratio: String)
 signal inventory_item_used(item_name: String)
+signal character_sheet_requested
 
 # ── Theme colors ─────────────────────────────────────────────────────────────
 const COL_BG := Color("1a1a2e")
@@ -44,6 +45,20 @@ var _bottom_bar: PanelContainer
 var _btn_chat: Button
 var _btn_inventory: Button
 var _btn_photo: Button
+var _camera_angle_option: OptionButton
+var _aspect_ratio_option: OptionButton
+
+const CAMERA_ANGLES := [
+	"Eye-Level Angle", "Low Angle", "High Angle", "Bird's-Eye/Overhead Angle",
+	"Worm's-Eye View/Ground-Level", "Dutch Angle/Tilted", "Side Angle",
+	"Front Angle", "Over-the-Shoulder Shot", "Point of View (POV)",
+	"Aerial Angle", "Shoulder-level", "Hip-level", "Knee-level",
+	"Front", "Oblique side", "Side", "Back",
+]
+
+const ASPECT_RATIOS := [
+	"4:3", "3:2", "16:9", "1:1", "3:4", "2:3", "9:16", "5:4", "4:5", "21:9", "9:21",
+]
 
 # Right panel
 var _right_panel: PanelContainer
@@ -55,6 +70,11 @@ var _npc_list_container: VBoxContainer
 var _photo_popup: PanelContainer
 var _photo_texture_rect: TextureRect
 var _photo_close_button: Button
+
+# Photo gallery
+var _gallery_panel: PanelContainer
+var _gallery_container: VBoxContainer
+var _gallery_textures: Array = []  # Array of ImageTexture
 
 # Interaction hint
 var _hint_label: Label
@@ -86,6 +106,7 @@ func _build_ui() -> void:
 	_build_chat_panel()
 	_build_right_panel()
 	_build_bottom_bar()
+	_build_photo_gallery()
 	_build_photo_popup()
 	_build_interaction_hint()
 	_build_loading_indicator()
@@ -304,6 +325,44 @@ func _build_bottom_bar() -> void:
 	_btn_inventory.pressed.connect(_toggle_right_panel)
 	hbox.add_child(_btn_inventory)
 
+	var btn_character := _make_icon_button("Personaggio", "[P]")
+	btn_character.pressed.connect(_on_character_sheet_pressed)
+	hbox.add_child(btn_character)
+
+	# Camera angle selector
+	var angle_label := Label.new()
+	angle_label.text = "Angolo:"
+	angle_label.add_theme_font_size_override("font_size", 12)
+	angle_label.add_theme_color_override("font_color", COL_DIM)
+	angle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hbox.add_child(angle_label)
+
+	_camera_angle_option = OptionButton.new()
+	for a in CAMERA_ANGLES:
+		_camera_angle_option.add_item(a)
+	_camera_angle_option.selected = 0
+	_camera_angle_option.add_theme_font_size_override("font_size", 11)
+	_camera_angle_option.add_theme_color_override("font_color", COL_TEXT)
+	_camera_angle_option.custom_minimum_size = Vector2(130, 30)
+	hbox.add_child(_camera_angle_option)
+
+	# Aspect ratio selector
+	var ratio_label := Label.new()
+	ratio_label.text = "Ratio:"
+	ratio_label.add_theme_font_size_override("font_size", 12)
+	ratio_label.add_theme_color_override("font_color", COL_DIM)
+	ratio_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hbox.add_child(ratio_label)
+
+	_aspect_ratio_option = OptionButton.new()
+	for r in ASPECT_RATIOS:
+		_aspect_ratio_option.add_item(r)
+	_aspect_ratio_option.selected = 0
+	_aspect_ratio_option.add_theme_font_size_override("font_size", 11)
+	_aspect_ratio_option.add_theme_color_override("font_color", COL_TEXT)
+	_aspect_ratio_option.custom_minimum_size = Vector2(80, 30)
+	hbox.add_child(_aspect_ratio_option)
+
 	_btn_photo = _make_icon_button("Foto", "(o)")
 	_btn_photo.pressed.connect(_on_photo_pressed)
 	hbox.add_child(_btn_photo)
@@ -323,17 +382,43 @@ func _make_icon_button(label_text: String, icon_text: String) -> Button:
 	return btn
 
 
+func _build_photo_gallery() -> void:
+	_gallery_panel = PanelContainer.new()
+	_gallery_panel.name = "PhotoGallery"
+	_gallery_panel.anchor_left = 1.0
+	_gallery_panel.anchor_top = 0.0
+	_gallery_panel.anchor_right = 1.0
+	_gallery_panel.anchor_bottom = 1.0
+	_gallery_panel.offset_left = -210
+	_gallery_panel.offset_top = 56
+	_gallery_panel.offset_right = -4
+	_gallery_panel.offset_bottom = -52
+	_gallery_panel.add_theme_stylebox_override("panel", _make_flat_style(Color(0, 0, 0, 0.4), 0, Color.TRANSPARENT, 4, 4, 4, 4))
+	_gallery_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_gallery_panel)
+
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_gallery_panel.add_child(scroll)
+
+	_gallery_container = VBoxContainer.new()
+	_gallery_container.add_theme_constant_override("separation", 6)
+	_gallery_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_gallery_container)
+
+
 func _build_photo_popup() -> void:
 	_photo_popup = PanelContainer.new()
 	_photo_popup.name = "PhotoPopup"
-	_photo_popup.set_anchors_preset(Control.PRESET_CENTER)
-	_photo_popup.offset_left = -320
-	_photo_popup.offset_top = -240
-	_photo_popup.offset_right = 320
-	_photo_popup.offset_bottom = 240
-	_photo_popup.add_theme_stylebox_override("panel", _make_flat_style(COL_BG, 2, COL_ACCENT, 8, 8, 8, 8))
+	_photo_popup.anchor_left = 0.1
+	_photo_popup.anchor_top = 0.05
+	_photo_popup.anchor_right = 0.9
+	_photo_popup.anchor_bottom = 0.92
+	_photo_popup.add_theme_stylebox_override("panel", _make_flat_style(COL_BG, 2, COL_ACCENT, 10, 10, 10, 10))
 	_photo_popup.visible = false
 	_photo_popup.mouse_filter = Control.MOUSE_FILTER_STOP
+	_photo_popup.z_index = 100
 	_root.add_child(_photo_popup)
 
 	var margin := MarginContainer.new()
@@ -515,9 +600,47 @@ func hide_options() -> void:
 	_options_container.visible = false
 
 
+var _gallery_paths: Array = []  # Saved file paths for persistence
+
+func add_photo_to_gallery(texture: ImageTexture, saved_path: String = "") -> void:
+	_gallery_textures.append(texture)
+
+	# Save to disk if not already saved
+	if saved_path == "":
+		var idx := _gallery_textures.size() - 1
+		saved_path = ProjectSettings.globalize_path("user://gallery_%d.png" % idx)
+		texture.get_image().save_png("user://gallery_%d.png" % idx)
+	_gallery_paths.append(saved_path)
+
+	var btn := TextureButton.new()
+	btn.texture_normal = texture
+	btn.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	btn.ignore_texture_size = true
+	btn.custom_minimum_size = Vector2(192, 144)
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	var tex_ref: ImageTexture = texture
+	btn.pressed.connect(func() -> void: show_photo(tex_ref))
+	_gallery_container.add_child(btn)
+	_gallery_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+
+
+func get_chat_history() -> Array:
+	return _chat_history.duplicate()
+
+
+func get_gallery_paths() -> Array:
+	return _gallery_paths.duplicate()
+
+
 func show_photo(texture: ImageTexture) -> void:
 	_photo_texture_rect.texture = texture
+	if _chat_visible:
+		_toggle_chat()
+	if _right_visible:
+		_toggle_right_panel()
 	_photo_popup.visible = true
+	_photo_popup.move_to_front()
 
 
 func update_inventory(items: Array) -> void:
@@ -630,8 +753,14 @@ func _on_option_selected(option_text: String) -> void:
 	_submit_chat()
 
 
+func _on_character_sheet_pressed() -> void:
+	character_sheet_requested.emit()
+
+
 func _on_photo_pressed() -> void:
-	photo_requested.emit()
+	var angle: String = CAMERA_ANGLES[_camera_angle_option.selected] if _camera_angle_option.selected >= 0 else "Eye-Level Angle"
+	var ratio: String = ASPECT_RATIOS[_aspect_ratio_option.selected] if _aspect_ratio_option.selected >= 0 else "4:3"
+	photo_requested.emit(angle, ratio)
 
 
 func _on_photo_close() -> void:

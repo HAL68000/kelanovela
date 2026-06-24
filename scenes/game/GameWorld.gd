@@ -34,6 +34,9 @@ var _spawn_areas: Array = []       # Cached references to spawn Area2D nodes
 # ── Photo state ──────────────────────────────────────────────────────────────
 var _photo_in_progress: bool = false
 
+# ── Character sheet ──────────────────────────────────────────────────────────
+var _character_sheet: CanvasLayer = null
+
 # ── Pause menu ───────────────────────────────────────────────────────────────
 var _pause_overlay: CanvasLayer = null
 var _pause_visible: bool = false
@@ -50,14 +53,35 @@ func _ready() -> void:
 	_spawn_npcs()
 	_setup_ui()
 	_build_pause_menu()
+	_setup_character_sheet()
 
 	_ui.update_inventory(GameState.objects.filter(
-		func(o: Dictionary) -> bool: return o.get("location", "") == "inventory"
+		func(o: Dictionary) -> bool:
+			return o.get("location", "") == "inventory" and o.get("owner", "") == GameState.player_character.get("name", "")
 	))
 
-	_ui.add_chat_message("Sistema", "Benvenuto nel gioco. Esplora il mondo e interagisci con i personaggi.", Color("4fc3f7"))
-	if GameState.objective != "":
-		_ui.add_chat_message("Obiettivo", GameState.objective, Color(0.9, 0.8, 0.3))
+	# Restore chat history
+	if GameState.chat_history.size() > 0:
+		for msg in GameState.chat_history:
+			var role: String = msg.get("role", "")
+			var content: String = msg.get("content", "")
+			if role == "user":
+				_ui.add_chat_message(GameState.player_character.get("name", "Tu"), content, Color("4fc3f7"))
+			elif role == "assistant":
+				_ui.add_chat_message("Narratore", content, Color(0.8, 0.8, 0.9))
+	else:
+		_ui.add_chat_message("Sistema", "Benvenuto nel gioco. Esplora il mondo e interagisci con i personaggi.", Color("4fc3f7"))
+		if GameState.objective != "":
+			_ui.add_chat_message("Obiettivo", GameState.objective, Color(0.9, 0.8, 0.3))
+
+	# Restore gallery images
+	for img_path: String in GameState.gallery_images:
+		if img_path == "":
+			continue
+		var img := Image.new()
+		if img.load(img_path) == OK:
+			var tex := ImageTexture.create_from_image(img)
+			_ui.add_photo_to_gallery(tex, img_path)
 
 
 func _process(_delta: float) -> void:
@@ -71,9 +95,26 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_ESCAPE:
 			_toggle_pause_menu()
 			get_viewport().set_input_as_handled()
+		elif (event.keycode == KEY_I or event.keycode == KEY_C) and not _pause_visible:
+			_toggle_character_sheet()
+			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_SPACE and _closest_npc_name != "" and not _pause_visible:
 			_interact_with_npc(_closest_npc_name)
 			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton and event.pressed and event.double_click and not _pause_visible:
+		var click_pos: Vector2 = _player.get_global_mouse_position() if _player else Vector2.ZERO
+		# Check player first
+		if _player and click_pos.distance_to(_player.global_position) < 40.0:
+			_toggle_character_sheet()
+			get_viewport().set_input_as_handled()
+		else:
+			# Check NPCs
+			for npc_name_key: String in _npc_sprites:
+				var npc_node: Node2D = _npc_sprites[npc_name_key]
+				if click_pos.distance_to(npc_node.global_position) < 40.0:
+					_show_npc_sheet(npc_name_key)
+					get_viewport().set_input_as_handled()
+					break
 
 
 func _interact_with_npc(npc_name: String) -> void:
@@ -125,11 +166,14 @@ func _setup_player() -> void:
 				sprite.scale = Vector2(s, s)
 
 	await get_tree().process_frame
-	_move_player_to_spawn("#entrance")
 
-	# Auto-save after entering the game
+	# Restore saved position or spawn at entrance
+	if GameState.player_position != Vector2.ZERO:
+		_player.global_position = GameState.player_position
+	else:
+		_move_player_to_spawn("#entrance")
+
 	GameState.game_started = true
-	GameState.save_game()
 
 
 func _setup_camera() -> void:
@@ -187,9 +231,15 @@ func _spawn_npcs() -> void:
 		var npc_node: CharacterBody2D = _npc_scene.instantiate()
 		add_child(npc_node)
 
-		# Position NPC at their assigned location or a spawn area
-		var position_tag: String = npc_data.get("position", "")
-		var spawn_pos := _find_area_position(position_tag)
+		# Restore saved position, or use assigned location, or fallback
+		var saved_x: float = float(npc_data.get("saved_position_x", 0))
+		var saved_y: float = float(npc_data.get("saved_position_y", 0))
+		var spawn_pos := Vector2.ZERO
+		if saved_x != 0 or saved_y != 0:
+			spawn_pos = Vector2(saved_x, saved_y)
+		else:
+			var position_tag: String = npc_data.get("position", "")
+			spawn_pos = _find_area_position(position_tag)
 		if spawn_pos == Vector2.ZERO:
 			# Fallback: distribute across available spawn areas
 			var spawn_idx := i % _spawn_areas.size() if _spawn_areas.size() > 0 else 0
@@ -461,7 +511,7 @@ func _action_move_player(params: Dictionary) -> void:
 # Photo Feature
 # ══════════════════════════════════════════════════════════════════════════════
 
-func take_photo() -> void:
+func take_photo(camera_angle: String = "Eye-Level Angle", aspect_ratio: String = "4:3") -> void:
 	if _photo_in_progress:
 		_ui.add_chat_message("Sistema", "Foto in elaborazione, attendi...", Color("4fc3f7"))
 		return
@@ -490,6 +540,7 @@ func take_photo() -> void:
 
 	var characters: Array = []
 
+	# Always add player character
 	var pc := GameState.player_character
 	if pc.get("name", "") != "":
 		var player_desc := ""
@@ -502,53 +553,118 @@ func take_photo() -> void:
 				pc.get("skin_color", ""),
 				pc.get("eye_color", ""),
 			]
-		characters.append({"name": pc["name"], "description": player_desc})
+		var has_pc_image: bool = pc.get("image_path", "") != ""
+		characters.append({"name": pc["name"], "description": player_desc, "has_ref_image": has_pc_image,
+			"sex": pc.get("sex", ""), "age": pc.get("age", ""), "race": pc.get("race", ""),
+			"skin_color": pc.get("skin_color", ""), "hair_color": pc.get("hair_color", ""),
+			"height": pc.get("height", ""), "body_type": pc.get("body_type", ""),
+			"breast_size": pc.get("breast_size", ""), "outfit": pc.get("outfit", []),
+		})
 
+	# Only add NPCs that are within interact distance (close enough to be "in frame")
 	for npc_data: Dictionary in _nearby_npcs:
+		var npc_name: String = npc_data.get("name", "")
+		if not _npc_sprites.has(npc_name):
+			continue
+		var npc_node: Node = _npc_sprites[npc_name]
+		var dist: float = _player.global_position.distance_to(npc_node.global_position)
+		if dist > NPC_INTERACT_DISTANCE:
+			continue
 		var npc_desc: String = str(npc_data.get("description", npc_data.get("physical_traits", "")))
 		var outfit: Array = npc_data.get("outfit", [])
 		if outfit.size() > 0:
 			npc_desc += " Wearing: %s." % ", ".join(outfit)
-		characters.append({"name": npc_data.get("name", ""), "description": npc_desc})
+		var has_npc_image: bool = npc_data.get("image_path", "") != ""
+		characters.append({"name": npc_data.get("name", ""), "description": npc_desc, "has_ref_image": has_npc_image,
+			"sex": npc_data.get("gender", ""), "age": str(npc_data.get("age", "")),
+			"race": npc_data.get("race", ""), "skin_color": npc_data.get("skin_color", ""),
+			"hair_color": npc_data.get("hair_color", ""), "outfit": outfit,
+		})
 
 	# 2. Build prompt via LLM
 	var style: String = GameState.image_style
 	if style == "custom" and GameState.custom_style != "":
 		style = GameState.custom_style
 
-	var prompt: String = await LLMService.build_scene_prompt(scene_description, characters, style)
+	var ref_char_count := 0
+	for c in characters:
+		if c.get("has_ref_image", false):
+			ref_char_count += 1
+	var prompt: String = await LLMService.build_scene_prompt(scene_description, characters, style, ref_char_count)
 
 	if prompt.is_empty():
 		_ui.add_chat_message("Sistema", "Errore: LLM non ha generato il prompt. Controlla che LM Studio sia attivo su %s" % GameState.llm_backend_url, Color(0.8, 0.3, 0.3))
-		_ui.set_loading(false)
-		_photo_in_progress = false
-		InvokeService.generation_failed.disconnect(_err_cb)
+		_safe_disconnect_err(_err_cb)
+		_cleanup_photo()
 		return
 
-	_ui.add_chat_message("Sistema", "Prompt: %s" % prompt.left(120), Color(0.6, 0.6, 0.7))
+	# Append camera angle
+	prompt += "\nCamera angle: %s" % camera_angle
+
+	# Calculate resolution from aspect ratio
+	var gen_w: int = GameState.render_width
+	var gen_h: int = GameState.render_height
+	var ratio_parts: PackedStringArray = aspect_ratio.split(":")
+	if ratio_parts.size() == 2:
+		var rw: float = float(ratio_parts[0])
+		var rh: float = float(ratio_parts[1])
+		if rw > 0 and rh > 0:
+			var long_side: int = maxi(gen_w, gen_h)
+			if rw >= rh:
+				gen_w = long_side
+				gen_h = int(long_side * rh / rw)
+			else:
+				gen_h = long_side
+				gen_w = int(long_side * rw / rh)
+			gen_w = floori(gen_w / 64.0) * 64
+			gen_h = floori(gen_h / 64.0) * 64
+			gen_w = maxi(gen_w, 256)
+			gen_h = maxi(gen_h, 256)
+
+	_ui.add_chat_message("Prompt InvokeAI", "%s\n[%s — %dx%d]" % [prompt, aspect_ratio, gen_w, gen_h], Color(0.6, 0.6, 0.7))
+	print("InvokeService prompt: ", prompt)
+
+	# 2b. Build composite context images for each character
+	_ui.add_chat_message("Sistema", "Preparazione immagini di contesto...", Color("4fc3f7"))
+	var ref_image_names: Array = []
+
+	for char_data: Dictionary in characters:
+		if not char_data.get("has_ref_image", false):
+			continue
+		var char_name: String = char_data.get("name", "")
+		var composite: Image = _build_character_composite(char_name)
+		if composite == null or composite.is_empty():
+			continue
+		var png_bytes: PackedByteArray = composite.save_png_to_buffer()
+		var invoke_name: String = await InvokeService.upload_image(png_bytes, "context_%s.png" % char_name.to_lower().replace(" ", "_"))
+		if invoke_name != "":
+			ref_image_names.append(invoke_name)
+			print("InvokeService: uploaded composite for '%s' as '%s'" % [char_name, invoke_name])
+
+	if ref_image_names.size() > 0:
+		_ui.add_chat_message("Sistema", "%d immagini composite caricate." % ref_image_names.size(), Color("4fc3f7"))
+
 	_ui.add_chat_message("Sistema", "Generando immagine su InvokeAI...", Color("4fc3f7"))
 
-	# 3. Generate image via InvokeAI
+	# 3. Generate image via InvokeAI with reference images
 	_last_invoke_error = ""
-	var image_name: String = await InvokeService.generate_image(prompt, 768, 512)
+	var image_name: String = await InvokeService.generate_image(prompt, gen_w, gen_h, ref_image_names)
 
 	if image_name.is_empty():
 		var detail := _last_invoke_error if _last_invoke_error != "" else "Nessun dettaglio disponibile"
 		_ui.add_chat_message("Sistema", "Errore generazione immagine: %s" % detail, Color(0.8, 0.3, 0.3))
-		_ui.set_loading(false)
-		_photo_in_progress = false
-		InvokeService.generation_failed.disconnect(_err_cb)
+		_safe_disconnect_err(_err_cb)
+		_cleanup_photo()
 		return
 
 	# 4. Download and display
 	var image_bytes: PackedByteArray = await InvokeService.download_image(image_name)
 
-	InvokeService.generation_failed.disconnect(_err_cb)
+	_safe_disconnect_err(_err_cb)
 
 	if image_bytes.is_empty():
 		_ui.add_chat_message("Sistema", "Errore download immagine '%s' da InvokeAI." % image_name, Color(0.8, 0.3, 0.3))
-		_ui.set_loading(false)
-		_photo_in_progress = false
+		_cleanup_photo()
 		return
 
 	var image := Image.new()
@@ -560,14 +676,23 @@ func take_photo() -> void:
 
 	if load_err != OK:
 		_ui.add_chat_message("Sistema", "Errore decodifica immagine (formato non riconosciuto).", Color(0.8, 0.3, 0.3))
-		_ui.set_loading(false)
-		_photo_in_progress = false
+		_cleanup_photo()
 		return
 
 	var texture := ImageTexture.create_from_image(image)
+	_ui.add_photo_to_gallery(texture)
 	_ui.show_photo(texture)
 	_ui.add_chat_message("Sistema", "Foto scattata!", Color(0.3, 0.9, 0.5))
 
+	_cleanup_photo()
+
+
+func _safe_disconnect_err(cb: Callable) -> void:
+	if InvokeService.generation_failed.is_connected(cb):
+		InvokeService.generation_failed.disconnect(cb)
+
+
+func _cleanup_photo() -> void:
 	_ui.set_loading(false)
 	_photo_in_progress = false
 
@@ -591,6 +716,78 @@ func _update_inventory_ui() -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 # Helpers
 # ══════════════════════════════════════════════════════════════════════════════
+
+func _build_character_composite(char_name: String) -> Image:
+	# Collect all images for this character: face + equipped item images
+	var images: Array = []  # Array of Image
+
+	# Determine if player or NPC
+	var is_player: bool = char_name == GameState.player_character.get("name", "")
+	var char_data: Dictionary = GameState.player_character if is_player else GameState.get_npc(char_name)
+
+	# Face image
+	var face_path: String = char_data.get("image_path", "")
+	if face_path != "":
+		var face_img := Image.new()
+		if face_img.load(face_path) == OK:
+			images.append(face_img)
+
+	# Equipped item images
+	for slot_key in ["head", "chest", "legs", "weapon", "shield", "accessory"]:
+		var item_name: String = char_data.get("slot_%s" % slot_key, "")
+		if item_name == "":
+			continue
+		for obj in GameState.objects:
+			if obj.get("name", "") == item_name and obj.get("image_path", "") != "":
+				var item_img := Image.new()
+				if item_img.load(obj["image_path"]) == OK:
+					images.append(item_img)
+				break
+
+	if images.is_empty():
+		return null
+
+	# Layout images on a white canvas, max 1200x1200
+	var max_canvas := 1200
+	var count: int = images.size()
+
+	if count == 1:
+		# Single image: just scale to fit
+		var img: Image = images[0]
+		var scale_factor: float = minf(float(max_canvas) / img.get_width(), float(max_canvas) / img.get_height())
+		if scale_factor < 1.0:
+			img.resize(int(img.get_width() * scale_factor), int(img.get_height() * scale_factor))
+		var canvas := Image.create(img.get_width(), img.get_height(), false, Image.FORMAT_RGBA8)
+		canvas.fill(Color.WHITE)
+		canvas.blit_rect(img, Rect2i(0, 0, img.get_width(), img.get_height()), Vector2i.ZERO)
+		return canvas
+
+	# Multiple images: arrange in a grid
+	var cols: int = ceili(sqrt(float(count)))
+	var rows: int = ceili(float(count) / cols)
+	var cell_w: int = max_canvas / cols
+	var cell_h: int = max_canvas / rows
+	var canvas_w: int = cell_w * cols
+	var canvas_h: int = cell_h * rows
+
+	var canvas := Image.create(canvas_w, canvas_h, false, Image.FORMAT_RGBA8)
+	canvas.fill(Color.WHITE)
+
+	for i in range(count):
+		var img: Image = images[i].duplicate()
+		var col: int = i % cols
+		var row: int = i / cols
+		# Scale image to fit in cell
+		var scale_factor: float = minf(float(cell_w) / img.get_width(), float(cell_h) / img.get_height())
+		if scale_factor < 1.0 or scale_factor > 1.0:
+			img.resize(maxi(1, int(img.get_width() * scale_factor)), maxi(1, int(img.get_height() * scale_factor)))
+		# Center in cell
+		var ox: int = col * cell_w + (cell_w - img.get_width()) / 2
+		var oy: int = row * cell_h + (cell_h - img.get_height()) / 2
+		canvas.blit_rect(img, Rect2i(0, 0, img.get_width(), img.get_height()), Vector2i(ox, oy))
+
+	return canvas
+
 
 func _find_area_position(tag_or_name: String) -> Vector2:
 	if tag_or_name.is_empty():
@@ -644,6 +841,53 @@ func _refresh_npc_sprite(npc_name: String) -> void:
 		if not updated_data.is_empty():
 			npc_node.npc_data = updated_data
 			npc_node.update_appearance()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Character Sheet
+# ══════════════════════════════════════════════════════════════════════════════
+
+func _setup_character_sheet() -> void:
+	var cs_scene: PackedScene = load("res://scenes/game/CharacterSheet.tscn")
+	_character_sheet = cs_scene.instantiate()
+	_character_sheet.name = "CharacterSheet"
+	add_child(_character_sheet)
+	_character_sheet.visible = false
+	_character_sheet.closed.connect(_on_character_sheet_closed)
+	_character_sheet.outfit_changed.connect(_on_outfit_changed)
+	_ui.character_sheet_requested.connect(_toggle_character_sheet)
+
+
+func _toggle_character_sheet() -> void:
+	if _pause_visible:
+		return
+	if _character_sheet.visible:
+		_character_sheet.hide_sheet()
+	else:
+		_character_sheet.show_sheet()
+
+
+func _show_npc_sheet(npc_name: String) -> void:
+	if _character_sheet:
+		_character_sheet.show_npc_sheet(npc_name)
+
+
+func _on_character_sheet_closed() -> void:
+	_update_inventory_ui()
+
+
+func _on_outfit_changed(outfit_description: String) -> void:
+	var pc: Dictionary = GameState.player_character
+	var pc_name: String = pc.get("name", "")
+	if pc_name != "":
+		# Update player character outfit in GameState for photo prompts
+		var outfit: Array = pc.get("outfit", [])
+		if outfit.is_empty() and outfit_description == "":
+			return
+		# Outfit array is already synced by CharacterSheet, just refresh NPC sprites
+		for npc_name: String in _npc_sprites:
+			_refresh_npc_sprite(npc_name)
+	_update_inventory_ui()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -863,12 +1107,33 @@ func _on_save_list_selected(index: int) -> void:
 	_pause_save_name_edit.text = slot
 
 
+func _sync_state_before_save() -> void:
+	# Save player position
+	if _player:
+		GameState.player_position = _player.global_position
+	# Save NPC positions
+	for npc_name_key: String in _npc_sprites:
+		var npc_node: Node2D = _npc_sprites[npc_name_key]
+		var npc_data: Dictionary = GameState.get_npc(npc_name_key)
+		if not npc_data.is_empty():
+			npc_data["saved_position_x"] = npc_node.global_position.x
+			npc_data["saved_position_y"] = npc_node.global_position.y
+			GameState.add_npc(npc_data)
+	# Save chat history from UI
+	if _ui and _ui.has_method("get_chat_history"):
+		GameState.chat_history = _ui.get_chat_history()
+	# Save gallery image paths
+	if _ui and _ui.has_method("get_gallery_paths"):
+		GameState.gallery_images = _ui.get_gallery_paths()
+
+
 func _on_pause_save() -> void:
 	var slot := _pause_save_name_edit.text.strip_edges()
 	if slot.is_empty():
 		_pause_status_label.add_theme_color_override("font_color", Color("e74c3c"))
 		_pause_status_label.text = "Inserisci un nome per il salvataggio."
 		return
+	_sync_state_before_save()
 	GameState.call("save_game", slot)
 	_pause_status_label.add_theme_color_override("font_color", Color("2ecc71"))
 	_pause_status_label.text = "Salvato: %s" % slot
@@ -905,6 +1170,7 @@ func _on_pause_delete() -> void:
 
 
 func _on_pause_main_menu() -> void:
+	_sync_state_before_save()
 	GameState.call("save_game", "auto")
 	get_tree().paused = false
 	get_tree().change_scene_to_file("res://scenes/ui/MainMenu.tscn")

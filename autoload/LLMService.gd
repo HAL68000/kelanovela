@@ -113,26 +113,108 @@ func generate_world(
 
 
 ## Build an image-generation prompt from scene context.
+## Characters are described by physical traits, NEVER by name.
+## ref_count: number of kontext reference images (adds "match face with imageN" directives).
 func build_scene_prompt(
 	scene_description: String,
 	characters: Array,
-	style: String
+	style: String,
+	ref_count: int = 0
 ) -> String:
-	var system := "You are a prompt engineer for image generation. Return ONLY the prompt text, no JSON."
+	var system := (
+		"You are a prompt engineer for image generation. Return ONLY the prompt text, no markdown. "
+		+ "CRITICAL RULES:\n"
+		+ "- NEVER use proper names or kinship-role words (father, mother, son, daughter, husband, wife, etc).\n"
+		+ "- Describe each character ONLY by their physical traits: race, age, gender, skin color, hair color, height, build, outfit.\n"
+		+ "- Example: instead of 'Maya' write 'Caucasian 25yo female, olive skin, black hair, athletic build, wearing red dress'.\n"
+		+ "- The prompt must be in English and optimized for Flux image generation.\n"
+	)
+	if ref_count > 0:
+		system += "- Reference images are provided. For the first character, add 'match face and outfit with image1' after their description.\n"
+		if ref_count > 1:
+			system += "- For subsequent characters with reference images, use 'match face and outfit with image2', etc.\n"
+
 	var char_descriptions: String = ""
+	var img_idx := 1
 	for c in characters:
-		char_descriptions += "- %s: %s\n" % [c.get("name", ""), c.get("description", c.get("physical_traits", ""))]
+		var tag := _build_character_tag(c)
+		if c.get("has_ref_image", false) and img_idx <= ref_count:
+			tag += ", match face and outfit with image%d" % img_idx
+			img_idx += 1
+		char_descriptions += "- %s\n" % tag
 
 	var prompt := (
 		"Create a concise image generation prompt for this scene.\n\n"
 		+ "Scene: %s\n" % scene_description
-		+ "Characters present:\n%s" % char_descriptions
+		+ "Characters present (describe by traits, NEVER by name):\n%s" % char_descriptions
 		+ "Art style: %s\n\n" % style
-		+ "Write a single paragraph prompt suitable for Stable Diffusion / Flux. "
-		+ "Include composition, lighting, mood. Do NOT include negative prompt."
+		+ "Write a single paragraph prompt. Include composition, lighting, mood. "
+		+ "Replace ALL character names with their physical description tags. "
+		+ "PRESERVE all 'match face with imageN' directives exactly as written. "
+		+ "Do NOT include negative prompt."
 	)
 	var messages := [{"role": "user", "content": prompt}]
-	return await chat(messages, system, 0.7, 500)
+	var result := await chat(messages, system, 0.35, 500)
+	return _sanitize_prompt_names(result, characters)
+
+
+## Build a physical-traits tag for a character, similar to Flutter's _characterTagWithOutfit.
+func _build_character_tag(c: Dictionary) -> String:
+	var gender: String = c.get("sex", c.get("gender", "")).to_lower().strip_edges()
+	var age: String = str(c.get("age", ""))
+	var race: String = c.get("race", c.get("skin_color", GameState.default_race)).strip_edges()
+	if race.is_empty():
+		race = GameState.default_race
+
+	var is_male := gender == "male" or gender == "maschile" or gender == "m"
+	var gender_word := "male" if is_male else "female"
+	if age != "" and int(age) > 0 and int(age) < 18:
+		gender_word = "boy" if is_male else "girl"
+
+	var parts: Array = []
+	if age != "" and int(age) > 0:
+		parts.append("%s %syo %s" % [race, age, gender_word])
+	else:
+		parts.append("%s %s" % [race, gender_word])
+
+	var skin: String = c.get("skin_color", "").strip_edges()
+	if skin != "":
+		parts.append(skin + " skin")
+	var hair: String = c.get("hair_color", "").strip_edges()
+	if hair != "":
+		parts.append(hair + " hair")
+	var height: String = c.get("height", "").strip_edges()
+	if height != "":
+		parts.append(height + "cm")
+	var build: String = c.get("body_type", c.get("build", "")).strip_edges()
+	if build != "" and build.to_lower() != "normale" and build.to_lower() != "average":
+		parts.append(build + " build")
+	var breast: String = c.get("breast_size", "").strip_edges()
+	if breast != "" and not is_male:
+		parts.append(breast + " breasts")
+
+	var outfit: Array = c.get("outfit", [])
+	if outfit.size() > 0:
+		parts.append("wearing " + ", ".join(outfit))
+	var desc: String = c.get("description", c.get("physical_traits", "")).strip_edges()
+	if desc != "" and outfit.is_empty():
+		parts.append(desc)
+
+	return ", ".join(parts)
+
+
+## Replace character names in prompt with their physical trait tags.
+func _sanitize_prompt_names(prompt: String, characters: Array) -> String:
+	var result := prompt
+	for c in characters:
+		var char_name: String = c.get("name", "").strip_edges()
+		if char_name.is_empty():
+			continue
+		var tag := _build_character_tag(c)
+		var regex := RegEx.new()
+		regex.compile("\\b" + RegEx.create_from_string(char_name).get_pattern() + "\\b")
+		result = result.replace(char_name, tag)
+	return result
 
 
 ## Main gameplay chat. Returns narrative + actions + options.

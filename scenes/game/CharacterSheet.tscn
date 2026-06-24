@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/game/CharacterSheet.gd" id="1"]
+
+[node name="CharacterSheet" type="CanvasLayer"]
+layer = 50
+script = ExtResource("1")

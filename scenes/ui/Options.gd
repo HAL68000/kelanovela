@@ -25,10 +25,18 @@ var _invoke_status_label: Label
 var _style_option: OptionButton
 var _custom_style_edit: LineEdit
 var _custom_style_container: Control
+var _invoke_model_option: OptionButton
+var _invoke_model_status: Label
+var _width_spin: SpinBox
+var _height_spin: SpinBox
+var _race_option: OptionButton
+
+const RACES := ["Caucasian", "Asian", "African", "Latino/Hispanic", "Middle Eastern", "Indigenous", "Mixed"]
 
 # HTTP request nodes
 var _llm_http: HTTPRequest
 var _invoke_http: HTTPRequest
+var _model_http: HTTPRequest
 
 
 func _ready() -> void:
@@ -187,6 +195,93 @@ func _build_ui() -> void:
 	_custom_style_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_custom_style_container.add_child(_custom_style_edit)
 
+	_add_spacer(vbox, 16)
+
+	# ── Section: Modello InvokeAI ────────────────────────────────────────────
+	_add_section_label(vbox, "Modello InvokeAI")
+
+	var model_row := HBoxContainer.new()
+	model_row.add_theme_constant_override("separation", 12)
+	vbox.add_child(model_row)
+
+	_invoke_model_option = OptionButton.new()
+	_invoke_model_option.add_item("(carica modelli...)")
+	_style_option_button(_invoke_model_option)
+	_invoke_model_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_invoke_model_option.custom_minimum_size = Vector2(300, 40)
+	model_row.add_child(_invoke_model_option)
+
+	var load_models_btn := Button.new()
+	load_models_btn.text = "Carica Modelli"
+	load_models_btn.custom_minimum_size = Vector2(180, 40)
+	_style_button(load_models_btn)
+	load_models_btn.pressed.connect(_on_load_invoke_models)
+	model_row.add_child(load_models_btn)
+
+	_invoke_model_status = Label.new()
+	_invoke_model_status.text = ""
+	_invoke_model_status.add_theme_font_size_override("font_size", 13)
+	_invoke_model_status.add_theme_color_override("font_color", SUBTITLE_COLOR)
+	vbox.add_child(_invoke_model_status)
+
+	_add_spacer(vbox, 16)
+
+	# ── Section: Risoluzione immagine ────────────────────────────────────────
+	_add_section_label(vbox, "Risoluzione Immagine")
+
+	var res_row := HBoxContainer.new()
+	res_row.add_theme_constant_override("separation", 12)
+	vbox.add_child(res_row)
+
+	var w_label := Label.new()
+	w_label.text = "Larghezza:"
+	w_label.add_theme_font_size_override("font_size", 14)
+	w_label.add_theme_color_override("font_color", SUBTITLE_COLOR)
+	w_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	res_row.add_child(w_label)
+
+	_width_spin = SpinBox.new()
+	_width_spin.min_value = 256
+	_width_spin.max_value = 2048
+	_width_spin.step = 64
+	_width_spin.value = 768
+	_width_spin.custom_minimum_size = Vector2(120, 40)
+	res_row.add_child(_width_spin)
+
+	var h_label := Label.new()
+	h_label.text = "Altezza:"
+	h_label.add_theme_font_size_override("font_size", 14)
+	h_label.add_theme_color_override("font_color", SUBTITLE_COLOR)
+	h_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	res_row.add_child(h_label)
+
+	_height_spin = SpinBox.new()
+	_height_spin.min_value = 256
+	_height_spin.max_value = 2048
+	_height_spin.step = 64
+	_height_spin.value = 512
+	_height_spin.custom_minimum_size = Vector2(120, 40)
+	res_row.add_child(_height_spin)
+
+	_add_spacer(vbox, 16)
+
+	# ── Section: Razza di default ────────────────────────────────────────────
+	_add_section_label(vbox, "Razza di Default")
+
+	var race_desc := Label.new()
+	race_desc.text = "Usata quando la razza non è specificata per un personaggio"
+	race_desc.add_theme_font_size_override("font_size", 13)
+	race_desc.add_theme_color_override("font_color", SUBTITLE_COLOR)
+	vbox.add_child(race_desc)
+
+	_race_option = OptionButton.new()
+	for r in RACES:
+		_race_option.add_item(r)
+	_style_option_button(_race_option)
+	_race_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_race_option.custom_minimum_size = Vector2(300, 40)
+	vbox.add_child(_race_option)
+
 	_add_spacer(vbox, 30)
 
 	# ── Back button ──────────────────────────────────────────────────────────
@@ -206,6 +301,10 @@ func _build_ui() -> void:
 	_invoke_http = HTTPRequest.new()
 	_invoke_http.request_completed.connect(_on_invoke_test_completed)
 	add_child(_invoke_http)
+
+	_model_http = HTTPRequest.new()
+	_model_http.request_completed.connect(_on_invoke_models_loaded)
+	add_child(_model_http)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -344,44 +443,59 @@ func _style_option_button(opt: OptionButton) -> void:
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _load_from_game_state() -> void:
-	# Language
 	var lang_idx := LANGUAGE_CODES.find(GameState.language)
 	if lang_idx >= 0:
 		_language_option.selected = lang_idx
 
-	# LLM
 	_llm_url_edit.text = GameState.llm_backend_url
 	_llm_model_edit.text = GameState.llm_model
-
-	# InvokeAI
 	_invoke_url_edit.text = GameState.invoke_url
 
-	# Style
 	var style_idx := STYLE_CODES.find(GameState.image_style)
 	if style_idx >= 0:
 		_style_option.selected = style_idx
 	_custom_style_edit.text = GameState.custom_style
 	_update_custom_style_visibility()
 
+	_width_spin.value = GameState.render_width
+	_height_spin.value = GameState.render_height
+
+	var race_idx := RACES.find(GameState.default_race)
+	if race_idx >= 0:
+		_race_option.selected = race_idx
+
+	if GameState.selected_invoke_model != "":
+		_invoke_model_option.clear()
+		_invoke_model_option.add_item(GameState.selected_invoke_model)
+		_invoke_model_option.selected = 0
+
 
 func _save_to_game_state() -> void:
-	# Language
 	var lang_idx := _language_option.selected
 	if lang_idx >= 0 and lang_idx < LANGUAGE_CODES.size():
 		GameState.language = LANGUAGE_CODES[lang_idx]
 
-	# LLM
 	GameState.llm_backend_url = _llm_url_edit.text.strip_edges()
 	GameState.llm_model = _llm_model_edit.text.strip_edges()
-
-	# InvokeAI
 	GameState.invoke_url = _invoke_url_edit.text.strip_edges()
 
-	# Style
 	var style_idx := _style_option.selected
 	if style_idx >= 0 and style_idx < STYLE_CODES.size():
 		GameState.image_style = STYLE_CODES[style_idx]
 	GameState.custom_style = _custom_style_edit.text.strip_edges()
+
+	if _invoke_model_option.selected >= 0:
+		var meta = _invoke_model_option.get_item_metadata(_invoke_model_option.selected)
+		if meta is String and meta != "":
+			GameState.selected_invoke_model = meta
+		else:
+			GameState.selected_invoke_model = _invoke_model_option.get_item_text(_invoke_model_option.selected)
+	GameState.render_width = int(_width_spin.value)
+	GameState.render_height = int(_height_spin.value)
+
+	var race_idx := _race_option.selected
+	if race_idx >= 0 and race_idx < RACES.size():
+		GameState.default_race = RACES[race_idx]
 
 	GameState.save_settings()
 
@@ -457,6 +571,66 @@ func _set_status(label: Label, text: String, success) -> void:
 		label.add_theme_color_override("font_color", Color.GREEN)
 	else:
 		label.add_theme_color_override("font_color", Color.RED)
+
+
+func _on_load_invoke_models() -> void:
+	var url := _invoke_url_edit.text.strip_edges()
+	if url.is_empty():
+		_invoke_model_status.text = "URL InvokeAI vuoto"
+		_invoke_model_status.add_theme_color_override("font_color", Color.RED)
+		return
+
+	_invoke_model_status.text = "Caricamento modelli..."
+	_invoke_model_status.add_theme_color_override("font_color", Color.YELLOW)
+
+	var models_url := url.trim_suffix("/") + "/api/v2/models/?model_type=main"
+	var err := _model_http.request(models_url)
+	if err != OK:
+		_invoke_model_status.text = "Errore richiesta: %d" % err
+		_invoke_model_status.add_theme_color_override("font_color", Color.RED)
+
+
+func _on_invoke_models_loaded(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	if result != HTTPRequest.RESULT_SUCCESS or response_code < 200 or response_code >= 300:
+		_invoke_model_status.text = "Errore caricamento modelli (HTTP %d)" % response_code
+		_invoke_model_status.add_theme_color_override("font_color", Color.RED)
+		return
+
+	var json := JSON.new()
+	if json.parse(body.get_string_from_utf8()) != OK:
+		_invoke_model_status.text = "Errore parsing risposta"
+		_invoke_model_status.add_theme_color_override("font_color", Color.RED)
+		return
+
+	var data = json.data
+	var models_array: Array = []
+	if data is Dictionary:
+		models_array = data.get("models", [])
+	elif data is Array:
+		models_array = data
+
+	_invoke_model_option.clear()
+	var current_selected := GameState.selected_invoke_model
+	var select_idx := 0
+	for i in range(models_array.size()):
+		var m: Dictionary = models_array[i]
+		var model_name: String = m.get("name", "")
+		var base: String = m.get("base", "")
+		if model_name.is_empty():
+			continue
+		_invoke_model_option.add_item("%s (%s)" % [model_name, base])
+		_invoke_model_option.set_item_metadata(_invoke_model_option.item_count - 1, model_name)
+		if model_name == current_selected:
+			select_idx = _invoke_model_option.item_count - 1
+
+	if _invoke_model_option.item_count > 0:
+		_invoke_model_option.selected = select_idx
+		_invoke_model_status.text = "%d modelli trovati" % _invoke_model_option.item_count
+		_invoke_model_status.add_theme_color_override("font_color", Color.GREEN)
+	else:
+		_invoke_model_option.add_item("(nessun modello)")
+		_invoke_model_status.text = "Nessun modello trovato"
+		_invoke_model_status.add_theme_color_override("font_color", Color.RED)
 
 
 func _on_back() -> void:

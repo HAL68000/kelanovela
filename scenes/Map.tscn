@@ -863,7 +863,7 @@ position = Vector2(744, 328)
 metadata/category = "room"
 metadata/area_name = "reading room"
 metadata/area_tag = ""
-metadata/area_description = "a reading room with scaffold of books, old parquet on floor , wooden table and baroque couch "
+metadata/area_description = "a reading room with bookshelf of books, old parquet on floor , wooden table and baroque couch "
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Objects/reading_room"]
 shape = SubResource("RectShape_46")

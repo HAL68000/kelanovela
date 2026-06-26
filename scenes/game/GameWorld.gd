@@ -52,6 +52,13 @@ var _story_screen: CanvasLayer = null
 var _story_screen_visible: bool = false
 var _story_log_container: VBoxContainer = null
 
+# ── Fog of war ───────────────────────────────────────────────────────────────
+var _fog_image: Image = null
+var _fog_texture: ImageTexture = null
+var _fog_sprite: Sprite2D = null
+const FOG_CELL := 16  # Resolution of fog grid in pixels
+const FOG_REVEAL_RADIUS := 120  # Pixels revealed around player
+
 # ── Dev console ──────────────────────────────────────────────────────────────
 var _dev_console: CanvasLayer = null
 var _dev_console_visible: bool = false
@@ -74,6 +81,7 @@ func _ready() -> void:
 	_build_pause_menu()
 	_setup_character_sheet()
 	_build_dev_console()
+	_setup_fog_of_war()
 
 	_ui.update_inventory(GameState.objects.filter(
 		func(o: Dictionary) -> bool:
@@ -112,6 +120,7 @@ func _process(_delta: float) -> void:
 	_update_camera()
 	_update_current_room()
 	_update_npc_proximity()
+	_update_fog_of_war()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -309,6 +318,23 @@ func _setup_player() -> void:
 		_move_player_to_spawn("#entrance")
 
 	GameState.game_started = true
+
+	# Connect door signals for player transparency
+	await get_tree().process_frame
+	for door in get_tree().get_nodes_in_group("interactive"):
+		if door is Area2D and door.get_meta("category", "") == "door":
+			door.body_entered.connect(_on_door_body_entered)
+			door.body_exited.connect(_on_door_body_exited)
+
+
+func _on_door_body_entered(body: Node) -> void:
+	if body == _player:
+		_player._on_door_entered()
+
+
+func _on_door_body_exited(body: Node) -> void:
+	if body == _player:
+		_player._on_door_exited()
 
 
 func _setup_camera() -> void:
@@ -842,6 +868,10 @@ func _action_move_npc(params: Dictionary) -> void:
 	if target_pos == Vector2.ZERO:
 		return
 
+	# Only move if destination area is revealed (fog of war)
+	if not _is_area_revealed(target_pos):
+		return
+
 	var npc_node: CharacterBody2D = _npc_sprites[npc_name]
 	npc_node.move_to(target_pos)
 
@@ -1111,6 +1141,86 @@ func _on_container_item_taken(item_name: String, container_key: String) -> void:
 		)
 	_ui.add_chat_message("Sistema", "Hai preso: %s" % item_name, Color("2ecc71"))
 	_update_inventory_ui()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Fog of War
+# ══════════════════════════════════════════════════════════════════════════════
+
+func _setup_fog_of_war() -> void:
+	var map_w: int = 1856
+	var map_h: int = 1408
+	if _map:
+		for child in _map.get_children():
+			if child is Sprite2D and child.texture:
+				map_w = int(child.texture.get_width())
+				map_h = int(child.texture.get_height())
+				break
+
+	var fog_w: int = ceili(float(map_w) / FOG_CELL)
+	var fog_h: int = ceili(float(map_h) / FOG_CELL)
+
+	# Try to restore saved fog
+	var restored := false
+	var saved_fog: String = GameState.fog_path
+	if saved_fog != "":
+		var saved_img := Image.new()
+		if saved_img.load(saved_fog) == OK:
+			saved_img.convert(Image.FORMAT_RGBA8)
+			if saved_img.get_width() == fog_w and saved_img.get_height() == fog_h:
+				_fog_image = saved_img
+				restored = true
+
+	if not restored:
+		_fog_image = Image.create(fog_w, fog_h, false, Image.FORMAT_RGBA8)
+		_fog_image.fill(Color(0, 0, 0, 1.0))
+
+	_fog_texture = ImageTexture.create_from_image(_fog_image)
+
+	_fog_sprite = Sprite2D.new()
+	_fog_sprite.texture = _fog_texture
+	_fog_sprite.centered = false
+	_fog_sprite.scale = Vector2(FOG_CELL, FOG_CELL)
+	_fog_sprite.z_index = 50
+	_fog_sprite.name = "FogOfWar"
+	add_child(_fog_sprite)
+
+
+func _update_fog_of_war() -> void:
+	if _fog_image == null or _player == null:
+		return
+
+	var px: int = int(_player.global_position.x / FOG_CELL)
+	var py: int = int(_player.global_position.y / FOG_CELL)
+	var radius_cells: int = ceili(float(FOG_REVEAL_RADIUS) / FOG_CELL)
+	var changed := false
+
+	for dy in range(-radius_cells, radius_cells + 1):
+		for dx in range(-radius_cells, radius_cells + 1):
+			var cx: int = px + dx
+			var cy: int = py + dy
+			if cx < 0 or cy < 0 or cx >= _fog_image.get_width() or cy >= _fog_image.get_height():
+				continue
+			var dist_sq: float = float(dx * dx + dy * dy)
+			if dist_sq > float(radius_cells * radius_cells):
+				continue
+			var current: Color = _fog_image.get_pixel(cx, cy)
+			if current.a > 0.01:
+				_fog_image.set_pixel(cx, cy, Color(0, 0, 0, 0))
+				changed = true
+
+	if changed:
+		_fog_texture.update(_fog_image)
+
+
+func _is_area_revealed(pos: Vector2) -> bool:
+	if _fog_image == null:
+		return true
+	var cx: int = int(pos.x / FOG_CELL)
+	var cy: int = int(pos.y / FOG_CELL)
+	if cx < 0 or cy < 0 or cx >= _fog_image.get_width() or cy >= _fog_image.get_height():
+		return true
+	return _fog_image.get_pixel(cx, cy).a < 0.1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2067,6 +2177,11 @@ func _sync_state_before_save() -> void:
 				GameState.objects[i]["map_pos_x"] = sprite.global_position.x
 				GameState.objects[i]["map_pos_y"] = sprite.global_position.y
 				break
+	# Save fog of war
+	if _fog_image != null:
+		var fog_path := "user://fog_map.png"
+		_fog_image.save_png(fog_path)
+		GameState.set("fog_path", ProjectSettings.globalize_path(fog_path))
 	# Save chat history from UI
 	if _ui and _ui.has_method("get_chat_history"):
 		GameState.chat_history = _ui.get_chat_history()

@@ -1300,34 +1300,164 @@ func _do_generate_item_image(item_name: String, width: int, height: int) -> void
 
 
 func _on_suggest_outfit() -> void:
-	var data: Dictionary = _get_char_data()
 	var pexels := get_node_or_null("/root/PexelsService")
 	if pexels == null or not pexels.is_available():
 		_ui_flash_message("PexelsService non disponibile")
 		return
+	_show_pexels_search_ui()
 
-	_ui_flash_message("Cercando outfit su Pexels...")
-	var results: Array = await pexels.search_outfit_for_character(data)
-	if results.is_empty():
-		_ui_flash_message("Nessun risultato trovato")
-		return
 
-	# Show selection popup
+func _show_pexels_search_ui(initial_query: String = "") -> void:
 	for child in _item_popup_vbox.get_children():
 		child.queue_free()
 
+	_item_popup.offset_left = -320
+	_item_popup.offset_right = 320
+	_item_popup.offset_top = -280
+	_item_popup.offset_bottom = 280
+
 	var title := Label.new()
-	title.text = "Scegli Outfit"
+	title.text = "Cerca su Pexels"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 18)
 	title.add_theme_color_override("font_color", COL_ACCENT)
 	_item_popup_vbox.add_child(title)
 
+	# Search row
+	var search_row := HBoxContainer.new()
+	search_row.add_theme_constant_override("separation", 8)
+	_item_popup_vbox.add_child(search_row)
+
+	var search_edit := LineEdit.new()
+	search_edit.placeholder_text = "es. elegant dress, leather jacket, armor..."
+	search_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	search_edit.add_theme_font_size_override("font_size", 14)
+	search_edit.add_theme_color_override("font_color", COL_TEXT)
+	search_edit.add_theme_stylebox_override("normal", _make_panel_style(COL_INPUT_BG, COL_ACCENT, 1, 4))
+	search_edit.add_theme_stylebox_override("focus", _make_panel_style(COL_INPUT_BG, COL_ACCENT, 1, 4))
+	if initial_query != "":
+		search_edit.text = initial_query
+	search_row.add_child(search_edit)
+
+	var search_btn := _make_action_button("Cerca")
+	search_btn.custom_minimum_size = Vector2(80, 32)
+	search_btn.add_theme_color_override("font_color", COL_ACCENT)
+	search_row.add_child(search_btn)
+
+	# Auto-suggest button
+	var auto_btn := _make_action_button("Suggerisci per personaggio")
+	auto_btn.add_theme_color_override("font_color", Color("e91e8c"))
+	_item_popup_vbox.add_child(auto_btn)
+
+	# Results grid (will be populated after search)
 	var grid := GridContainer.new()
 	grid.columns = 3
 	grid.add_theme_constant_override("h_separation", 8)
 	grid.add_theme_constant_override("v_separation", 8)
 	_item_popup_vbox.add_child(grid)
+
+	var status_lbl := Label.new()
+	status_lbl.text = ""
+	status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_lbl.add_theme_font_size_override("font_size", 13)
+	status_lbl.add_theme_color_override("font_color", COL_DIM)
+	_item_popup_vbox.add_child(status_lbl)
+
+	var close_btn := _make_action_button("Chiudi")
+	close_btn.pressed.connect(_hide_item_popup)
+	_item_popup_vbox.add_child(close_btn)
+
+	# Connect search
+	search_btn.pressed.connect(func() -> void:
+		var query := search_edit.text.strip_edges()
+		if query.is_empty():
+			return
+		await _do_pexels_search(query, grid, status_lbl)
+	)
+	search_edit.text_submitted.connect(func(query: String) -> void:
+		if query.strip_edges().is_empty():
+			return
+		await _do_pexels_search(query.strip_edges(), grid, status_lbl)
+	)
+	auto_btn.pressed.connect(func() -> void:
+		var data: Dictionary = _get_char_data()
+		var pexels := get_node_or_null("/root/PexelsService")
+		if pexels == null:
+			return
+		var gender: String = data.get("sex", data.get("gender", "")).to_lower()
+		var is_male: bool = gender == "male" or gender == "maschile"
+		var gw := "man" if is_male else "woman"
+		var role: String = data.get("role", "")
+		var auto_query := "%s %s fashion outfit" % [gw, role] if role != "" else "%s fashion outfit" % gw
+		search_edit.text = auto_query
+		await _do_pexels_search(auto_query, grid, status_lbl)
+	)
+
+	_item_popup.visible = true
+
+	# Auto-search if initial query provided
+	if initial_query != "":
+		await _do_pexels_search(initial_query, grid, status_lbl)
+
+
+func _do_pexels_search(query: String, grid: GridContainer, status_lbl: Label) -> void:
+	var pexels := get_node_or_null("/root/PexelsService")
+	if pexels == null:
+		return
+
+	# Clear grid
+	for child in grid.get_children():
+		child.queue_free()
+
+	status_lbl.text = "Cercando '%s'..." % query
+	status_lbl.add_theme_color_override("font_color", Color("f39c12"))
+
+	var results: Array = await pexels.search_photos(query, 6)
+	if results.is_empty():
+		status_lbl.text = "Nessun risultato per '%s'" % query
+		status_lbl.add_theme_color_override("font_color", Color("e74c3c"))
+		return
+
+	status_lbl.text = "%d risultati" % results.size()
+	status_lbl.add_theme_color_override("font_color", Color("2ecc71"))
+
+	for photo: Dictionary in results:
+		var photo_url: String = photo.get("url_small", "")
+		var photo_medium: String = photo.get("url_medium", "")
+		if photo_url == "":
+			continue
+
+		var cell := VBoxContainer.new()
+		cell.add_theme_constant_override("separation", 4)
+		grid.add_child(cell)
+
+		var thumb_bytes: PackedByteArray = await pexels.download_image(photo_url)
+		if thumb_bytes.is_empty():
+			continue
+
+		var img := Image.new()
+		if img.load_jpg_from_buffer(thumb_bytes) != OK:
+			if img.load_png_from_buffer(thumb_bytes) != OK:
+				continue
+
+		var tex := ImageTexture.create_from_image(img)
+		var tex_btn := TextureButton.new()
+		tex_btn.texture_normal = tex
+		tex_btn.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+		tex_btn.ignore_texture_size = true
+		tex_btn.custom_minimum_size = Vector2(170, 130)
+		var medium_url: String = photo_medium
+		var alt_text: String = photo.get("alt", "outfit")
+		tex_btn.pressed.connect(_on_outfit_selected.bind(medium_url, alt_text))
+		cell.add_child(tex_btn)
+
+		var desc_lbl := Label.new()
+		desc_lbl.text = photo.get("alt", "").left(25)
+		desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		desc_lbl.add_theme_font_size_override("font_size", 10)
+		desc_lbl.add_theme_color_override("font_color", COL_DIM)
+		desc_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		cell.add_child(desc_lbl)
 
 	# Resize popup to be bigger for images
 	_item_popup.offset_left = -300

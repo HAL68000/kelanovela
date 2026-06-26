@@ -69,7 +69,8 @@ var chat_history: Array = []
 var gallery_images: Array = []
 var story_intro: String = ""  # LLM-generated story introduction (max 300 chars)
 var story_log: Array = []  # Array of {"type":"dialogue"|"choice"|"event", "text":"...", "npc":"..."}
-var met_npcs: Array = []  # NPC names the player has met
+var met_npcs: Array = []
+var fog_path: String = ""
 
 # ── Library database (persistent across games) ──────────────────────────────
 var _library_path: String = "user://library.json"
@@ -168,6 +169,7 @@ func save_game(slot_name: String = "auto") -> void:
 		"story_intro": story_intro,
 		"story_log": story_log,
 		"met_npcs": met_npcs,
+		"fog_path": fog_path,
 	}
 	var json_string := JSON.stringify(data, "\t")
 	var path := "%s/save.json" % save_dir
@@ -241,6 +243,7 @@ func load_game(slot_name: String = "auto") -> bool:
 	story_intro = data.get("story_intro", "")
 	story_log = data.get("story_log", [])
 	met_npcs = data.get("met_npcs", [])
+	fog_path = data.get("fog_path", "")
 
 	var pos_data: Dictionary = data.get("player_position", {})
 	player_position = Vector2(
@@ -331,6 +334,7 @@ func reset_game() -> void:
 	story_intro = ""
 	story_log = []
 	met_npcs = []
+	fog_path = ""
 	game_state_changed.emit()
 
 

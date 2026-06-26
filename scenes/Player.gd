@@ -53,9 +53,9 @@ func _physics_process(_delta):
 
 	move_and_slide()
 
-	# Door transparency
+	# Door transparency — apply to entire node so custom images also fade
 	var target_opacity = door_opacity if _in_door else 1.0
-	sprite.modulate.a = move_toward(sprite.modulate.a, target_opacity, 0.08)
+	modulate.a = move_toward(modulate.a, target_opacity, 0.08)
 
 func _on_door_entered():
 	_in_door = true

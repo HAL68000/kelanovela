@@ -236,23 +236,66 @@ func game_chat(player_message: String, context: Dictionary) -> Dictionary:
 	var system := (
 		"You are the game master of an interactive fiction game. "
 		+ "Always respond in valid JSON with this structure:\n"
-		+ '{"response":"narrative text","actions":[{"type":"change_outfit|create_object|destroy_object|change_mood|change_status|move_npc|move_player","params":{}}],"options":["option1","option2","option3"]}\n\n'
+		+ '{"response":"narrative text","npc_movements":[{"npc_name":"...","destination":"room_tag","reason":"..."}],"actions":[{"type":"...","params":{}}],"options":["option1","option2","option3"]}\n\n'
 		+ "Available action types:\n"
 		+ "- change_outfit: params {npc_name, slot, item}\n"
 		+ "- create_object: params {name, description, category, location}\n"
 		+ "- destroy_object: params {name}\n"
 		+ "- change_mood: params {npc_name, mood}\n"
 		+ "- change_status: params {npc_name, alive}\n"
-		+ "- move_npc: params {npc_name, destination}\n"
+		+ "- move_npc: params {npc_name, destination} — destination can be a room tag, 'player' to approach the player, or another NPC's name to approach them\n"
 		+ "- move_player: params {destination}\n\n"
-		+ "Always provide 2-4 options for the player's next action."
+		+ "NPC MOVEMENT RULES:\n"
+		+ "- Each turn, decide if NPCs should move based on their mood, personality, and the situation.\n"
+		+ "- If an NPC gets angry, scared, or has a reason to leave, move them to another room.\n"
+		+ "- If an NPC needs to fetch something, move them to the appropriate room.\n"
+		+ "- Use 'npc_movements' ONLY for NPCs that are nearby or directly involved in the interaction.\n"
+		+ "- Do NOT move distant NPCs that have no reason to react.\n"
+		+ "- Use 'destination' values from the available rooms list.\n"
+		+ "- Also add a corresponding 'move_npc' action for each movement.\n\n"
+		+ "NPC PERSONALITY RULES:\n"
+		+ "- Each NPC has a personality, strengths, weaknesses, and flaws. Use these to determine their reactions.\n"
+		+ "- An NPC with a weakness for flattery will respond positively to compliments.\n"
+		+ "- An NPC with anger issues may get angry easily and leave the room.\n"
+		+ "- Make NPCs behave consistently with their personality profile.\n\n"
+		+ "Always provide 2-4 options for the player's next action. Respond in the same language as the player."
 	)
+
+	var npc_profiles := ""
+	for npc: Dictionary in GameState.npcs:
+		var npc_name: String = npc.get("name", "")
+		if npc_name == "":
+			continue
+		var personality: String = npc.get("personality", "")
+		var strengths: String = npc.get("strengths", "")
+		var weaknesses: String = npc.get("weaknesses", "")
+		if personality != "" or strengths != "" or weaknesses != "":
+			npc_profiles += "  %s: " % npc_name
+			if personality != "":
+				npc_profiles += "Personalità: %s. " % personality
+			if strengths != "":
+				npc_profiles += "Pregi: %s. " % strengths
+			if weaknesses != "":
+				npc_profiles += "Debolezze: %s. " % weaknesses
+			npc_profiles += "\n"
+
+	var pc := GameState.player_character
+	var pc_profile := ""
+	var pc_personality: String = pc.get("personality", "")
+	var pc_strengths: String = pc.get("strengths", "")
+	var pc_weaknesses: String = pc.get("weaknesses", "")
+	if pc_personality != "" or pc_strengths != "":
+		pc_profile = "Player personality: %s. Strengths: %s. Weaknesses: %s.\n" % [pc_personality, pc_strengths, pc_weaknesses]
 
 	var ctx_text := (
 		"Current room: %s\n" % context.get("current_room", "unknown")
 		+ "Nearby NPCs: %s\n" % str(context.get("nearby_npcs", []))
+		+ "All NPCs and positions: %s\n" % str(context.get("all_npcs", []))
+		+ (("NPC Profiles:\n" + npc_profiles) if npc_profiles != "" else "")
+		+ (pc_profile if pc_profile != "" else "")
+		+ "Available rooms: %s\n" % str(context.get("rooms", []))
 		+ "Player inventory: %s\n" % str(context.get("inventory", []))
-		+ "Story state: %s\n" % context.get("story_state", "")
+		+ "Story/objective: %s\n" % context.get("story_state", "")
 	)
 
 	var messages: Array = context.get("history", []).duplicate()

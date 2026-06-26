@@ -246,7 +246,10 @@ func _generate_npcs(llm: Node) -> void:
 		"Genera un array JSON di massimo 6 personaggi NPC per una storia di tipo '%s'. "
 		+ "Contesto: %s. "
 		+ "Ogni personaggio deve avere: name (string), age (int), role (string), "
-		+ "gender (string: Maschile/Femminile), race (string), hair_color (string), skin_color (string). "
+		+ "gender (string: Maschile/Femminile), race (string), hair_color (string), skin_color (string), "
+		+ "personality (string: detailed psychological profile including temperament and behavior), "
+		+ "strengths (string: what they're good at, virtues), "
+		+ "weaknesses (string: flaws, fears, vulnerabilities, things that can be exploited). "
 		+ "Rispondi SOLO con il JSON array, senza altro testo."
 	) % [GameState.story_type, context]
 
@@ -307,7 +310,12 @@ func _generate_objects(llm: Node) -> void:
 	var prompt := (
 		"Genera un array JSON di 5-10 oggetti per una storia di tipo '%s'. "
 		+ "Contesto: %s. "
-		+ "Ogni oggetto deve avere: name (string), description (string), location (string). "
+		+ "Ogni oggetto deve avere: name (string), description (string), category (string: clothes|tools|weapons|medicine|food|jewelry|scrolls|machinery), "
+		+ "location (string: room name), image_width (int: 64|128|192|256), image_height (int: 64|128|192|256), "
+		+ "container (string: 'cabinet'|'basket'|'table'|'none'). "
+		+ "Scegli la dimensione in base al tipo: piccoli (chiavi, anelli, gioielli) = 64x64, medi (spade, libri, vestiti) = 128x128, grandi (armature, statue) = 192x192 o 256x256. "
+		+ "Oggetti piccoli e medi (vestiti, utensili, cibo, medicinali, gioielli, pergamene) vanno in container='cabinet'|'basket'|'table'. "
+		+ "Oggetti grandi (>128px, macchinari, statue, armature da esposizione) vanno con container='none' e saranno visibili sulla mappa. "
 		+ "Rispondi SOLO con il JSON array, senza altro testo."
 	) % [GameState.story_type, context]
 
@@ -354,8 +362,41 @@ func _create_placeholder_objects() -> void:
 
 func _finalize_world(llm: Node) -> void:
 	_update_step(2, "in corso")
-	# Brief pause to simulate world preparation
-	await get_tree().create_timer(1.0).timeout
+
+	# Auto-generate images for all objects
+	var invoke := get_node_or_null("/root/InvokeService")
+	if invoke:
+		var invoke_ok: bool = await invoke.test_connection()
+		if invoke_ok:
+			_set_loading(true, "Generazione immagini oggetti...")
+			for i in range(GameState.objects.size()):
+				var obj: Dictionary = GameState.objects[i]
+				if obj.get("image_path", "") != "":
+					continue
+				var w: int = int(obj.get("image_width", 64))
+				var h: int = int(obj.get("image_height", 64))
+				_set_loading(true, "Immagine %d/%d: %s..." % [i + 1, GameState.objects.size(), obj.get("name", "?")])
+				await _generate_object_image(i, w, h)
+			_set_loading(false)
+			_populate_object_list()
+
+	# Generate story introduction
+	_set_loading(true, "Generazione introduzione storia...")
+	if llm and llm.has_method("chat"):
+		var intro_prompt := (
+			"Scrivi un breve preambolo narrativo (massimo 300 caratteri) per questa storia.\n"
+			+ "Tipo: %s\n" % GameState.story_type
+			+ "Ambientazione: %s\n" % GameState.story_preamble
+			+ "Protagonista: %s\n" % GameState.player_character.get("name", "?")
+			+ "Obiettivo: %s\n" % GameState.objective
+			+ "Scrivi SOLO il testo narrativo, senza virgolette o formattazione."
+		)
+		var intro_messages := [{"role": "user", "content": intro_prompt}]
+		var intro_result: String = await llm.chat(intro_messages, "You are a narrative writer. Write concise, atmospheric introductions.", 0.7, 500)
+		if intro_result != "":
+			GameState.story_intro = intro_result.left(300)
+	_set_loading(false)
+
 	GameState.game_started = true
 	GameState.current_scene = "game_world"
 	_update_step(2, "completato")
@@ -413,14 +454,12 @@ func _populate_object_list() -> void:
 	for child in object_list_container.get_children():
 		child.queue_free()
 
-	for obj in GameState.objects:
+	for i in range(GameState.objects.size()):
+		var obj: Dictionary = GameState.objects[i]
 		var obj_panel := PanelContainer.new()
 		var obj_style := StyleBoxFlat.new()
 		obj_style.bg_color = SURFACE_COLOR
-		obj_style.corner_radius_top_left = 6
-		obj_style.corner_radius_top_right = 6
-		obj_style.corner_radius_bottom_left = 6
-		obj_style.corner_radius_bottom_right = 6
+		obj_style.set_corner_radius_all(6)
 		obj_style.content_margin_left = 12
 		obj_style.content_margin_right = 12
 		obj_style.content_margin_top = 8
@@ -428,15 +467,171 @@ func _populate_object_list() -> void:
 		obj_panel.add_theme_stylebox_override("panel", obj_style)
 		object_list_container.add_child(obj_panel)
 
-		var obj_label := Label.new()
-		obj_label.text = "%s — %s" % [
-			obj.get("name", "???"),
-			obj.get("description", ""),
-		]
-		obj_label.add_theme_font_size_override("font_size", 16)
-		obj_label.add_theme_color_override("font_color", TEXT_COLOR)
-		obj_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		obj_panel.add_child(obj_label)
+		var hbox := HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", 8)
+		obj_panel.add_child(hbox)
+
+		# Thumbnail if image exists
+		var img_path: String = obj.get("image_path", "")
+		if img_path != "":
+			var thumb := TextureRect.new()
+			thumb.custom_minimum_size = Vector2(40, 40)
+			thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			var img := Image.new()
+			if img.load(img_path) == OK:
+				thumb.texture = ImageTexture.create_from_image(img)
+			hbox.add_child(thumb)
+
+		# Info
+		var info_vbox := VBoxContainer.new()
+		info_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hbox.add_child(info_vbox)
+
+		var name_lbl := Label.new()
+		name_lbl.text = obj.get("name", "???")
+		name_lbl.add_theme_font_size_override("font_size", 16)
+		name_lbl.add_theme_color_override("font_color", TEXT_COLOR)
+		info_vbox.add_child(name_lbl)
+
+		var desc_lbl := Label.new()
+		var desc_text: String = obj.get("description", "")
+		var cat_text: String = obj.get("category", "")
+		var size_text := "%dx%d" % [int(obj.get("image_width", 64)), int(obj.get("image_height", 64))]
+		desc_lbl.text = "%s [%s] %s" % [desc_text, cat_text, size_text] if cat_text != "" else "%s %s" % [desc_text, size_text]
+		desc_lbl.add_theme_font_size_override("font_size", 13)
+		desc_lbl.add_theme_color_override("font_color", SUBTITLE_COLOR)
+		desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		info_vbox.add_child(desc_lbl)
+
+		# Size spinboxes
+		var size_row := HBoxContainer.new()
+		size_row.add_theme_constant_override("separation", 4)
+		hbox.add_child(size_row)
+
+		var w_spin := SpinBox.new()
+		w_spin.min_value = 64
+		w_spin.max_value = 256
+		w_spin.step = 64
+		w_spin.value = int(obj.get("image_width", 64))
+		w_spin.custom_minimum_size = Vector2(70, 28)
+		w_spin.tooltip_text = "Larghezza"
+		size_row.add_child(w_spin)
+
+		var x_lbl := Label.new()
+		x_lbl.text = "x"
+		x_lbl.add_theme_font_size_override("font_size", 12)
+		x_lbl.add_theme_color_override("font_color", SUBTITLE_COLOR)
+		size_row.add_child(x_lbl)
+
+		var h_spin := SpinBox.new()
+		h_spin.min_value = 64
+		h_spin.max_value = 256
+		h_spin.step = 64
+		h_spin.value = int(obj.get("image_height", 64))
+		h_spin.custom_minimum_size = Vector2(70, 28)
+		h_spin.tooltip_text = "Altezza"
+		size_row.add_child(h_spin)
+
+		# Generate button
+		var gen_btn := Button.new()
+		gen_btn.text = "Genera" if img_path == "" else "Rigenera"
+		gen_btn.custom_minimum_size = Vector2(90, 36)
+		_style_button(gen_btn)
+		gen_btn.add_theme_color_override("font_color", ACCENT_COLOR)
+		var obj_idx: int = i
+		var ws: SpinBox = w_spin
+		var hs: SpinBox = h_spin
+		gen_btn.pressed.connect(func() -> void:
+			await _generate_object_image(obj_idx, int(ws.value), int(hs.value))
+		)
+		hbox.add_child(gen_btn)
+
+	# "Genera Tutte" button
+	var gen_all_btn := Button.new()
+	gen_all_btn.text = "Genera Tutte le Immagini"
+	gen_all_btn.custom_minimum_size = Vector2(260, 40)
+	_style_button(gen_all_btn, true)
+	gen_all_btn.pressed.connect(_generate_all_object_images)
+	object_list_container.add_child(gen_all_btn)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Object image generation
+# ══════════════════════════════════════════════════════════════════════════════
+
+func _generate_object_image(obj_index: int, width: int, height: int) -> void:
+	if obj_index < 0 or obj_index >= GameState.objects.size():
+		return
+	var obj: Dictionary = GameState.objects[obj_index]
+	var obj_name: String = obj.get("name", "")
+	var desc: String = obj.get("description", obj_name)
+	var cat: String = obj.get("category", "")
+
+	var style: String = GameState.image_style
+	if style == "custom" and GameState.custom_style != "":
+		style = GameState.custom_style
+
+	var prompt := "%s, %s, %s style, white background, game item icon, centered, simple, no text" % [obj_name, desc, style]
+	if cat != "":
+		prompt += ", %s" % cat
+
+	_set_loading(true, "Generando immagine: %s..." % obj_name)
+
+	var invoke := get_node_or_null("/root/InvokeService")
+	if invoke == null:
+		_set_loading(false)
+		return
+
+	var image_name: String = await invoke.generate_image(prompt, width, height)
+	if image_name.is_empty():
+		_set_loading(false)
+		return
+
+	var image_bytes: PackedByteArray = await invoke.download_image(image_name)
+	_set_loading(false)
+
+	if image_bytes.is_empty():
+		return
+
+	var safe_name := obj_name.to_lower().replace(" ", "_").replace("/", "_")
+	var save_path := "user://obj_%s.png" % safe_name
+	var img := Image.new()
+	if img.load_png_from_buffer(image_bytes) != OK:
+		if img.load_jpg_from_buffer(image_bytes) != OK:
+			img.load_webp_from_buffer(image_bytes)
+	if img.is_empty():
+		return
+
+	_remove_white_background(img)
+	img.save_png(save_path)
+	GameState.objects[obj_index]["image_path"] = ProjectSettings.globalize_path(save_path)
+	GameState.objects[obj_index]["image_width"] = width
+	GameState.objects[obj_index]["image_height"] = height
+	_populate_object_list()
+
+
+func _remove_white_background(img: Image) -> void:
+	img.convert(Image.FORMAT_RGBA8)
+	var threshold := 0.88
+	for y in range(img.get_height()):
+		for x in range(img.get_width()):
+			var c: Color = img.get_pixel(x, y)
+			if c.r > threshold and c.g > threshold and c.b > threshold:
+				var whiteness: float = minf(minf(c.r, c.g), c.b)
+				var alpha: float = 1.0 - ((whiteness - threshold) / (1.0 - threshold))
+				alpha = clampf(alpha, 0.0, c.a)
+				img.set_pixel(x, y, Color(c.r, c.g, c.b, alpha))
+
+
+func _generate_all_object_images() -> void:
+	for i in range(GameState.objects.size()):
+		var obj: Dictionary = GameState.objects[i]
+		if obj.get("image_path", "") != "":
+			continue
+		var w: int = int(obj.get("image_width", 64))
+		var h: int = int(obj.get("image_height", 64))
+		await _generate_object_image(i, w, h)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

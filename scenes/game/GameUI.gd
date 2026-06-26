@@ -8,6 +8,7 @@ signal chat_action_requested(action: Dictionary)
 signal photo_requested(camera_angle: String, aspect_ratio: String, extra_details: String)
 signal inventory_item_used(item_name: String)
 signal character_sheet_requested
+signal container_item_taken(item_name: String, container_key: String)
 
 # ── Theme colors ─────────────────────────────────────────────────────────────
 const COL_BG := Color("1a1a2e")
@@ -88,6 +89,10 @@ var _hint_label: Label
 # Chat history for LLM context
 var _chat_history: Array = []
 
+# Input history (shell-like up/down)
+var _input_history: Array = []
+var _input_history_idx: int = -1
+
 # Loading indicator
 var _loading_label: Label
 
@@ -114,6 +119,7 @@ func _build_ui() -> void:
 	_build_bottom_bar()
 	_build_photo_gallery()
 	_build_photo_popup()
+	_build_container_popup()
 	_build_photo_modal()
 	_build_interaction_hint()
 	_build_loading_indicator()
@@ -466,6 +472,220 @@ func _build_photo_popup() -> void:
 	vbox.add_child(_photo_texture_rect)
 
 
+var _container_popup: PanelContainer
+var _container_vbox: VBoxContainer
+var _container_key: String = ""
+
+
+func _build_container_popup() -> void:
+	_container_popup = PanelContainer.new()
+	_container_popup.name = "ContainerPopup"
+	_container_popup.anchor_left = 0.1
+	_container_popup.anchor_right = 0.9
+	_container_popup.anchor_top = 0.08
+	_container_popup.anchor_bottom = 0.92
+	_container_popup.add_theme_stylebox_override("panel", _make_flat_style(COL_BG, 2, COL_ACCENT, 10, 10, 10, 10))
+	_container_popup.visible = false
+	_container_popup.mouse_filter = Control.MOUSE_FILTER_STOP
+	_container_popup.z_index = 80
+	_root.add_child(_container_popup)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 16)
+	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	_container_popup.add_child(margin)
+
+	_container_vbox = VBoxContainer.new()
+	_container_vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(_container_vbox)
+
+
+func show_container(title: String, items: Array, key: String) -> void:
+	_container_key = key
+	for child in _container_vbox.get_children():
+		child.queue_free()
+
+	var header := Label.new()
+	header.text = title
+	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	header.add_theme_font_size_override("font_size", 22)
+	header.add_theme_color_override("font_color", COL_ACCENT)
+	_container_vbox.add_child(header)
+
+	# Two columns: container slots | player inventory
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 16)
+	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_container_vbox.add_child(columns)
+
+	# ── Left: Container slots ──
+	var left_panel := PanelContainer.new()
+	left_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_panel.add_theme_stylebox_override("panel", _make_flat_style(Color("0f1525"), 1, COL_BORDER, 6, 6, 6, 6))
+	columns.add_child(left_panel)
+
+	var left_vbox := VBoxContainer.new()
+	left_vbox.add_theme_constant_override("separation", 6)
+	left_panel.add_child(left_vbox)
+
+	var left_title := Label.new()
+	left_title.text = "Contenuto (%d/6)" % items.size()
+	left_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	left_title.add_theme_font_size_override("font_size", 16)
+	left_title.add_theme_color_override("font_color", COL_ACCENT)
+	left_vbox.add_child(left_title)
+
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	left_vbox.add_child(grid)
+
+	for i in range(6):
+		var slot_panel := PanelContainer.new()
+		slot_panel.custom_minimum_size = Vector2(120, 70)
+		var slot_bg := COL_SURFACE if i < items.size() else Color("0a0e18")
+		var slot_border := COL_ACCENT if i < items.size() else Color("1a2030")
+		slot_panel.add_theme_stylebox_override("panel", _make_flat_style(slot_bg, 1, slot_border, 4, 4, 4, 4))
+		grid.add_child(slot_panel)
+
+		var slot_vbox := VBoxContainer.new()
+		slot_vbox.add_theme_constant_override("separation", 2)
+		slot_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		slot_panel.add_child(slot_vbox)
+
+		if i < items.size():
+			var item: Dictionary = items[i]
+			var img_path: String = item.get("image_path", "")
+			if img_path != "":
+				var thumb := TextureRect.new()
+				thumb.custom_minimum_size = Vector2(36, 36)
+				thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+				thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+				thumb.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+				var img := Image.new()
+				if img.load(img_path) == OK:
+					thumb.texture = ImageTexture.create_from_image(img)
+				slot_vbox.add_child(thumb)
+
+			var name_lbl := Label.new()
+			name_lbl.text = item.get("name", "???")
+			name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			name_lbl.add_theme_font_size_override("font_size", 11)
+			name_lbl.add_theme_color_override("font_color", COL_TEXT)
+			name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			slot_vbox.add_child(name_lbl)
+
+			var take_btn := Button.new()
+			take_btn.text = "Prendi"
+			take_btn.add_theme_font_size_override("font_size", 10)
+			take_btn.add_theme_color_override("font_color", COL_ACCENT)
+			take_btn.flat = true
+			var item_name: String = item.get("name", "")
+			var captured_key := key
+			take_btn.pressed.connect(func() -> void:
+				container_item_taken.emit(item_name, captured_key)
+				_container_popup.visible = false
+			)
+			slot_vbox.add_child(take_btn)
+		else:
+			var empty := Label.new()
+			empty.text = "·"
+			empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			empty.add_theme_font_size_override("font_size", 14)
+			empty.add_theme_color_override("font_color", Color(1, 1, 1, 0.1))
+			slot_vbox.add_child(empty)
+
+	# ── Right: Player inventory ──
+	var right_panel := PanelContainer.new()
+	right_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_panel.add_theme_stylebox_override("panel", _make_flat_style(Color("0f1525"), 1, COL_BORDER, 6, 6, 6, 6))
+	columns.add_child(right_panel)
+
+	var right_vbox := VBoxContainer.new()
+	right_vbox.add_theme_constant_override("separation", 4)
+	right_panel.add_child(right_vbox)
+
+	var right_title := Label.new()
+	right_title.text = "Inventario"
+	right_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	right_title.add_theme_font_size_override("font_size", 16)
+	right_title.add_theme_color_override("font_color", Color("f39c12"))
+	right_vbox.add_child(right_title)
+
+	var pc_name: String = GameState.player_character.get("name", "")
+	var inv_items: Array = GameState.objects.filter(
+		func(o: Dictionary) -> bool:
+			return o.get("location", "") == "inventory" and o.get("owner", "") == pc_name
+	)
+
+	var inv_scroll := ScrollContainer.new()
+	inv_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	inv_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right_vbox.add_child(inv_scroll)
+
+	var inv_list := VBoxContainer.new()
+	inv_list.add_theme_constant_override("separation", 3)
+	inv_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inv_scroll.add_child(inv_list)
+
+	if inv_items.is_empty():
+		var empty_lbl := Label.new()
+		empty_lbl.text = "(vuoto)"
+		empty_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		empty_lbl.add_theme_font_size_override("font_size", 13)
+		empty_lbl.add_theme_color_override("font_color", COL_DIM)
+		inv_list.add_child(empty_lbl)
+	else:
+		for inv_item: Dictionary in inv_items:
+			var inv_row := HBoxContainer.new()
+			inv_row.add_theme_constant_override("separation", 4)
+			inv_list.add_child(inv_row)
+
+			var inv_name := Label.new()
+			inv_name.text = inv_item.get("name", "?")
+			inv_name.add_theme_font_size_override("font_size", 13)
+			inv_name.add_theme_color_override("font_color", COL_TEXT)
+			inv_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			inv_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			inv_row.add_child(inv_name)
+
+			var inv_cat := Label.new()
+			inv_cat.text = inv_item.get("category", "")
+			inv_cat.add_theme_font_size_override("font_size", 10)
+			inv_cat.add_theme_color_override("font_color", COL_DIM)
+			inv_row.add_child(inv_cat)
+
+	# ── Bottom buttons ──
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 10)
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_container_vbox.add_child(btn_row)
+
+	if items.size() > 0:
+		var take_all_btn := _make_button("Prendi Tutto", COL_ACCENT)
+		take_all_btn.custom_minimum_size = Vector2(140, 36)
+		var all_names: Array = []
+		for it: Dictionary in items:
+			all_names.append(it.get("name", ""))
+		var captured_key := key
+		take_all_btn.pressed.connect(func() -> void:
+			for n: String in all_names:
+				container_item_taken.emit(n, captured_key)
+			_container_popup.visible = false
+		)
+		btn_row.add_child(take_all_btn)
+
+	var close_btn := _make_button("Chiudi", COL_BUTTON_BG)
+	close_btn.custom_minimum_size = Vector2(120, 36)
+	close_btn.pressed.connect(func() -> void: _container_popup.visible = false)
+	btn_row.add_child(close_btn)
+
+	_container_popup.visible = true
+
+
 func _build_photo_modal() -> void:
 	_photo_modal = PanelContainer.new()
 	_photo_modal.name = "PhotoModal"
@@ -629,6 +849,7 @@ func _build_loading_indicator() -> void:
 func _connect_signals() -> void:
 	_send_button.pressed.connect(_on_send_pressed)
 	_chat_input.text_submitted.connect(_on_text_submitted)
+	_chat_input.gui_input.connect(_on_chat_input_gui)
 	_photo_button.pressed.connect(_on_photo_pressed)
 	_photo_close_button.pressed.connect(_on_photo_close)
 	_inventory_list.item_activated.connect(_on_inventory_item_activated)
@@ -794,6 +1015,32 @@ func set_loading(loading: bool) -> void:
 # Internal callbacks
 # ══════════════════════════════════════════════════════════════════════════════
 
+func _on_chat_input_gui(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if event.keycode == KEY_UP:
+		if _input_history.is_empty():
+			return
+		if _input_history_idx < 0:
+			_input_history_idx = _input_history.size() - 1
+		elif _input_history_idx > 0:
+			_input_history_idx -= 1
+		_chat_input.text = _input_history[_input_history_idx]
+		_chat_input.caret_column = _chat_input.text.length()
+		_chat_input.accept_event()
+	elif event.keycode == KEY_DOWN:
+		if _input_history.is_empty() or _input_history_idx < 0:
+			return
+		if _input_history_idx < _input_history.size() - 1:
+			_input_history_idx += 1
+			_chat_input.text = _input_history[_input_history_idx]
+		else:
+			_input_history_idx = -1
+			_chat_input.text = ""
+		_chat_input.caret_column = _chat_input.text.length()
+		_chat_input.accept_event()
+
+
 func _on_send_pressed() -> void:
 	_submit_chat()
 
@@ -807,14 +1054,14 @@ func _submit_chat() -> void:
 	if text.is_empty():
 		return
 
+	_input_history.append(text)
+	_input_history_idx = -1
 	_chat_input.text = ""
 	hide_options()
 	add_chat_message(GameState.player_character.get("name", "Tu"), text, COL_ACCENT)
 
-	# Store in history
 	_chat_history.append({"role": "user", "content": text})
-
-	# Send to LLM via GameWorld
+	GameState.story_log.append({"type": "choice", "text": text, "npc": ""})
 	_send_to_llm(text)
 
 
@@ -830,13 +1077,27 @@ func _send_to_llm(message: String) -> void:
 	var response_text: String = result.get("response", "...")
 	add_chat_message("Narratore", response_text, Color(0.8, 0.8, 0.9))
 
-	# Store assistant response in history
 	_chat_history.append({"role": "assistant", "content": response_text})
+	GameState.story_log.append({"type": "dialogue", "text": response_text, "npc": "Narratore"})
 
 	# Show options
 	var options: Array = result.get("options", [])
 	if options.size() > 0:
 		show_options(options)
+
+	# Process NPC movements (from npc_movements field)
+	var movements: Array = result.get("npc_movements", [])
+	for movement in movements:
+		if not movement is Dictionary:
+			continue
+		var npc_name: String = movement.get("npc_name", "")
+		var dest: String = movement.get("destination", "")
+		var reason: String = movement.get("reason", "")
+		if npc_name != "" and dest != "":
+			chat_action_requested.emit({
+				"type": "move_npc",
+				"params": {"npc_name": npc_name, "destination": dest, "reason": reason}
+			})
 
 	# Process actions
 	var actions: Array = result.get("actions", [])
@@ -845,11 +1106,36 @@ func _send_to_llm(message: String) -> void:
 
 
 func _build_chat_context() -> Dictionary:
+	# Build all NPC positions
+	var all_npcs: Array = []
+	for npc: Dictionary in GameState.npcs:
+		var npc_name: String = npc.get("name", "")
+		if npc_name == "":
+			continue
+		var pos: String = npc.get("position", "sconosciuta")
+		var mood: String = npc.get("mood", "neutrale")
+		all_npcs.append("%s (in: %s, umore: %s)" % [npc_name, pos, mood])
+
+	# Build available rooms list
+	var rooms: Array = []
+	for area in get_tree().get_nodes_in_group("room"):
+		var room_name: String = area.get_meta("area_name", "")
+		var room_tag: String = area.get_meta("area_tag", "")
+		if room_name != "":
+			rooms.append("%s [%s]" % [room_name, room_tag] if room_tag != "" else room_name)
+	for area in get_tree().get_nodes_in_group("hallway"):
+		var hall_name: String = area.get_meta("area_name", "")
+		var hall_tag: String = area.get_meta("area_tag", "")
+		if hall_name != "":
+			rooms.append("%s [%s]" % [hall_name, hall_tag] if hall_tag != "" else hall_name)
+
 	return {
 		"current_room": _room_label.text,
 		"nearby_npcs": _get_nearby_npc_names(),
+		"all_npcs": all_npcs,
+		"rooms": rooms,
 		"inventory": _get_inventory_names(),
-		"story_state": GameState.story_preamble,
+		"story_state": "%s — Obiettivo: %s" % [GameState.story_preamble, GameState.objective],
 		"history": _chat_history.duplicate(),
 	}
 

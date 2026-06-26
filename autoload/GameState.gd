@@ -45,6 +45,9 @@ var player_character: Dictionary = {
 	"slot_shield": "",
 	"slot_accessory": "",
 	"outfit": [],
+	"personality": "",
+	"strengths": "",
+	"weaknesses": "",
 }
 
 # ── Objective ─────────────────────────────────────────────────────────────────
@@ -63,7 +66,13 @@ var game_started: bool = false
 # ── Runtime state (saved with game) ──────────────────────────────────────────
 var player_position: Vector2 = Vector2.ZERO
 var chat_history: Array = []
-var gallery_images: Array = []  # Array of file paths to saved screenshots
+var gallery_images: Array = []
+var story_intro: String = ""  # LLM-generated story introduction (max 300 chars)
+var story_log: Array = []  # Array of {"type":"dialogue"|"choice"|"event", "text":"...", "npc":"..."}
+var met_npcs: Array = []  # NPC names the player has met
+
+# ── Library database (persistent across games) ──────────────────────────────
+var _library_path: String = "user://library.json"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -156,6 +165,9 @@ func save_game(slot_name: String = "auto") -> void:
 		"player_position": {"x": player_position.x, "y": player_position.y},
 		"chat_history": chat_history,
 		"gallery_images": gallery_paths,
+		"story_intro": story_intro,
+		"story_log": story_log,
+		"met_npcs": met_npcs,
 	}
 	var json_string := JSON.stringify(data, "\t")
 	var path := "%s/save.json" % save_dir
@@ -226,6 +238,9 @@ func load_game(slot_name: String = "auto") -> bool:
 	game_started = data.get("game_started", false)
 	chat_history = data.get("chat_history", [])
 	gallery_images = data.get("gallery_images", [])
+	story_intro = data.get("story_intro", "")
+	story_log = data.get("story_log", [])
+	met_npcs = data.get("met_npcs", [])
 
 	var pos_data: Dictionary = data.get("player_position", {})
 	player_position = Vector2(
@@ -313,7 +328,122 @@ func reset_game() -> void:
 	player_position = Vector2.ZERO
 	chat_history = []
 	gallery_images = []
+	story_intro = ""
+	story_log = []
+	met_npcs = []
 	game_state_changed.emit()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Library — reusable items and characters across games
+# ══════════════════════════════════════════════════════════════════════════════
+
+func library_save_item(item: Dictionary) -> void:
+	var lib := _load_library()
+	var items: Array = lib.get("items", [])
+	# Replace if exists, else append
+	var found := false
+	for i in range(items.size()):
+		if items[i].get("name", "") == item.get("name", ""):
+			items[i] = item.duplicate(true)
+			found = true
+			break
+	if not found:
+		items.append(item.duplicate(true))
+	lib["items"] = items
+	_save_library(lib)
+
+
+func library_save_character(char_data: Dictionary) -> void:
+	var lib := _load_library()
+	var chars: Array = lib.get("characters", [])
+	var save_data := char_data.duplicate(true)
+	# Include equipped items (not inventory)
+	var equipped_items: Array = []
+	for slot_key in ["head", "chest", "legs", "weapon", "shield", "accessory"]:
+		var item_name: String = save_data.get("slot_%s" % slot_key, "")
+		if item_name == "":
+			continue
+		for obj in objects:
+			if obj.get("name", "") == item_name:
+				equipped_items.append(obj.duplicate(true))
+				break
+	save_data["saved_equipped_items"] = equipped_items
+	# Replace if exists
+	var found := false
+	var char_name: String = save_data.get("name", "")
+	for i in range(chars.size()):
+		if chars[i].get("name", "") == char_name:
+			chars[i] = save_data
+			found = true
+			break
+	if not found:
+		chars.append(save_data)
+	lib["characters"] = chars
+	_save_library(lib)
+
+
+func library_list_items() -> Array:
+	var lib := _load_library()
+	return lib.get("items", [])
+
+
+func library_list_characters() -> Array:
+	var lib := _load_library()
+	return lib.get("characters", [])
+
+
+func library_delete_item(item_name: String) -> void:
+	var lib := _load_library()
+	var items: Array = lib.get("items", [])
+	lib["items"] = items.filter(func(i: Dictionary) -> bool: return i.get("name", "") != item_name)
+	_save_library(lib)
+
+
+func library_delete_character(char_name: String) -> void:
+	var lib := _load_library()
+	var chars: Array = lib.get("characters", [])
+	lib["characters"] = chars.filter(func(c: Dictionary) -> bool: return c.get("name", "") != char_name)
+	_save_library(lib)
+
+
+func library_load_character_into_game(char_name: String, as_npc: bool = true) -> Dictionary:
+	var lib := _load_library()
+	for c: Dictionary in lib.get("characters", []):
+		if c.get("name", "") == char_name:
+			var data := c.duplicate(true)
+			# Restore equipped items into game objects
+			var saved_items: Array = data.get("saved_equipped_items", [])
+			for item in saved_items:
+				item["owner"] = char_name
+				item["location"] = "equipped"
+				add_object(item)
+			data.erase("saved_equipped_items")
+			if as_npc:
+				add_npc(data)
+			return data
+	return {}
+
+
+func _load_library() -> Dictionary:
+	var file := FileAccess.open(_library_path, FileAccess.READ)
+	if file == null:
+		return {"items": [], "characters": []}
+	var json := JSON.new()
+	if json.parse(file.get_as_text()) != OK:
+		return {"items": [], "characters": []}
+	if json.data is Dictionary:
+		return json.data
+	return {"items": [], "characters": []}
+
+
+func _save_library(lib: Dictionary) -> void:
+	var file := FileAccess.open(_library_path, FileAccess.WRITE)
+	if file == null:
+		push_error("GameState: failed to write library")
+		return
+	file.store_string(JSON.stringify(lib, "\t"))
+	file.close()
 
 
 func _default_player_character() -> Dictionary:
@@ -337,6 +467,9 @@ func _default_player_character() -> Dictionary:
 		"slot_shield": "",
 		"slot_accessory": "",
 		"outfit": [],
+		"personality": "",
+		"strengths": "",
+		"weaknesses": "",
 	}
 
 

@@ -28,6 +28,9 @@ var breast_size_label: Label
 var breast_size_row: HBoxContainer
 var buttocks_option: OptionButton
 var legs_option: OptionButton
+var personality_edit: LineEdit
+var strengths_edit: LineEdit
+var weaknesses_edit: LineEdit
 var error_label: Label
 
 # Data
@@ -280,6 +283,27 @@ func _build_ui() -> void:
 	add_tattoo_btn.pressed.connect(_on_add_tattoo)
 	right_vbox.add_child(add_tattoo_btn)
 
+	# Psychology section
+	right_vbox.add_child(_make_separator())
+	right_vbox.add_child(_make_field_label("Profilo Psicologico"))
+
+	personality_edit = LineEdit.new()
+	personality_edit.placeholder_text = "es. Curiosa, determinata, a volte impulsiva"
+	_style_line_edit(personality_edit)
+	right_vbox.add_child(personality_edit)
+
+	right_vbox.add_child(_make_field_label("Pregi"))
+	strengths_edit = LineEdit.new()
+	strengths_edit.placeholder_text = "es. Coraggio, intelligenza, empatia"
+	_style_line_edit(strengths_edit)
+	right_vbox.add_child(strengths_edit)
+
+	right_vbox.add_child(_make_field_label("Debolezze"))
+	weaknesses_edit = LineEdit.new()
+	weaknesses_edit.placeholder_text = "es. Paura del buio, troppo fiduciosa"
+	_style_line_edit(weaknesses_edit)
+	right_vbox.add_child(weaknesses_edit)
+
 	# Error label
 	error_label = Label.new()
 	error_label.text = ""
@@ -358,6 +382,13 @@ func _restore_state() -> void:
 	var tattoos: Array = pc.get("tattoos", [])
 	for t in tattoos:
 		_add_tattoo_entry(t.get("description", ""), t.get("position", ""))
+	# Restore psychology
+	if pc.get("personality", "") != "":
+		personality_edit.text = pc["personality"]
+	if pc.get("strengths", "") != "":
+		strengths_edit.text = pc["strengths"]
+	if pc.get("weaknesses", "") != "":
+		weaknesses_edit.text = pc["weaknesses"]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -508,6 +539,9 @@ func _save_to_game_state() -> void:
 		"breast_size": _breast_sizes[breast_size_option.selected] if sex_option.selected == 1 else "",
 		"buttocks": _buttocks_options[buttocks_option.selected],
 		"legs": _legs_options[legs_option.selected],
+		"personality": personality_edit.text.strip_edges(),
+		"strengths": strengths_edit.text.strip_edges(),
+		"weaknesses": weaknesses_edit.text.strip_edges(),
 	}
 
 

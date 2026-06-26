@@ -277,6 +277,17 @@ func _build_left_column(parent: HBoxContainer) -> void:
 	_mood_label.add_theme_color_override("font_color", COL_ACCENT)
 	mood_row.add_child(_mood_label)
 
+	# Psychology section
+	var psych_sep := HSeparator.new()
+	psych_sep.add_theme_color_override("separator", COL_BORDER)
+	vbox.add_child(psych_sep)
+
+	var psych_title := Label.new()
+	psych_title.text = "Profilo Psicologico"
+	psych_title.add_theme_font_size_override("font_size", 14)
+	psych_title.add_theme_color_override("font_color", COL_ACCENT)
+	vbox.add_child(psych_title)
+
 
 func _build_center_column(parent: HBoxContainer) -> void:
 	var panel := PanelContainer.new()
@@ -438,6 +449,18 @@ func _build_bottom_row(parent: VBoxContainer) -> void:
 	_outfit_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_outfit_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	bottom.add_child(_outfit_label)
+
+	var outfit_btn := _make_action_button("Suggerisci Outfit")
+	outfit_btn.add_theme_color_override("font_color", Color("e91e8c"))
+	outfit_btn.custom_minimum_size = Vector2(160, 36)
+	outfit_btn.pressed.connect(_on_suggest_outfit)
+	bottom.add_child(outfit_btn)
+
+	var save_lib_btn := _make_action_button("Salva in Libreria")
+	save_lib_btn.add_theme_color_override("font_color", Color("2ecc71"))
+	save_lib_btn.custom_minimum_size = Vector2(160, 36)
+	save_lib_btn.pressed.connect(_on_save_to_library)
+	bottom.add_child(save_lib_btn)
 
 	var close_btn := _make_action_button("Chiudi")
 	close_btn.custom_minimum_size = Vector2(120, 36)
@@ -607,10 +630,41 @@ func _refresh_character_info() -> void:
 	_add_editable_stat("Corporatura", data.get("body_type", data.get("build", "---")), "body_type")
 	_add_editable_stat("Razza", data.get("race", GameState.default_race), "race")
 	_add_editable_stat("Età", str(data.get("age", "---")), "age")
+	_add_compact_editable("Pers.", data.get("personality", ""), "personality")
+	_add_compact_editable("Pregi", data.get("strengths", ""), "strengths")
+	_add_compact_editable("Deb.", data.get("weaknesses", ""), "weaknesses")
 
 	# Mood
 	var mood: String = data.get("mood", "neutrale")
 	_mood_label.text = mood if mood != "" else "neutrale"
+
+
+func _add_compact_editable(label_text: String, value: String, key: String) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+
+	var key_lbl := Label.new()
+	key_lbl.text = label_text + ":"
+	key_lbl.add_theme_font_size_override("font_size", 11)
+	key_lbl.add_theme_color_override("font_color", COL_DIM)
+	key_lbl.custom_minimum_size = Vector2(40, 0)
+	row.add_child(key_lbl)
+
+	var val_text: String = value if value != "" else "---"
+	var val_btn := Button.new()
+	val_btn.text = val_text.left(30)
+	val_btn.tooltip_text = val_text
+	val_btn.flat = true
+	val_btn.add_theme_font_size_override("font_size", 11)
+	val_btn.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9))
+	val_btn.add_theme_color_override("font_hover_color", COL_ACCENT)
+	val_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	val_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	val_btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	val_btn.pressed.connect(_on_stat_edit.bind(key, row, val_btn))
+	row.add_child(val_btn)
+
+	_stats_container.add_child(row)
 
 
 func _add_editable_stat(label_text: String, value: String, key: String) -> void:
@@ -776,6 +830,18 @@ func _build_inventory_row(item: Dictionary) -> PanelContainer:
 	hbox.add_theme_constant_override("separation", 6)
 	margin.add_child(hbox)
 
+	# Item thumbnail (if image exists)
+	var img_path: String = item.get("image_path", "")
+	if img_path != "":
+		var thumb := TextureRect.new()
+		thumb.custom_minimum_size = Vector2(28, 28)
+		thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		var img := Image.new()
+		if img.load(img_path) == OK:
+			thumb.texture = ImageTexture.create_from_image(img)
+		hbox.add_child(thumb)
+
 	# Item name
 	var name_lbl := Label.new()
 	name_lbl.text = item.get("name", "???")
@@ -784,6 +850,15 @@ func _build_inventory_row(item: Dictionary) -> PanelContainer:
 	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	hbox.add_child(name_lbl)
+
+	# Size label
+	var item_w: int = int(item.get("image_width", 64))
+	var item_h: int = int(item.get("image_height", 64))
+	var size_lbl := Label.new()
+	size_lbl.text = "%dx%d" % [item_w, item_h]
+	size_lbl.add_theme_font_size_override("font_size", 10)
+	size_lbl.add_theme_color_override("font_color", COL_DIM)
+	hbox.add_child(size_lbl)
 
 	# Category badge
 	var category: String = item.get("category", "")
@@ -801,6 +876,28 @@ func _build_inventory_row(item: Dictionary) -> PanelContainer:
 		badge_style.content_margin_bottom = 1
 		badge.add_theme_stylebox_override("normal", badge_style)
 		hbox.add_child(badge)
+
+	# Generate image button
+	var gen_btn := Button.new()
+	gen_btn.text = "Genera" if img_path == "" else "Rigenera"
+	gen_btn.add_theme_font_size_override("font_size", 11)
+	gen_btn.add_theme_color_override("font_color", COL_ACCENT)
+	gen_btn.add_theme_color_override("font_hover_color", COL_TEXT)
+	var gen_style := StyleBoxFlat.new()
+	gen_style.bg_color = Color("1a2040")
+	gen_style.border_color = COL_ACCENT
+	gen_style.set_border_width_all(1)
+	gen_style.set_corner_radius_all(3)
+	gen_style.content_margin_left = 6
+	gen_style.content_margin_right = 6
+	gen_style.content_margin_top = 2
+	gen_style.content_margin_bottom = 2
+	gen_btn.add_theme_stylebox_override("normal", gen_style)
+	var gen_hover := gen_style.duplicate()
+	gen_hover.bg_color = Color("2a3060")
+	gen_btn.add_theme_stylebox_override("hover", gen_hover)
+	gen_btn.pressed.connect(_on_generate_item_image.bind(item.get("name", ""), item_w, item_h))
+	hbox.add_child(gen_btn)
 
 	# Click button (left click for options, right click for image)
 	var click_btn := Button.new()
@@ -1059,6 +1156,309 @@ func _on_popup_discard(item_name: String) -> void:
 	_hide_item_popup()
 
 
+func _on_generate_item_image(item_name: String, width: int, height: int) -> void:
+	# Show size selection popup
+	for child in _item_popup_vbox.get_children():
+		child.queue_free()
+
+	var title := Label.new()
+	title.text = "Genera immagine: %s" % item_name
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", COL_ACCENT)
+	_item_popup_vbox.add_child(title)
+
+	# Size controls
+	var size_row := HBoxContainer.new()
+	size_row.add_theme_constant_override("separation", 8)
+	size_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_item_popup_vbox.add_child(size_row)
+
+	var w_lbl := Label.new()
+	w_lbl.text = "W:"
+	w_lbl.add_theme_font_size_override("font_size", 14)
+	w_lbl.add_theme_color_override("font_color", COL_DIM)
+	size_row.add_child(w_lbl)
+
+	var w_spin := SpinBox.new()
+	w_spin.min_value = 64
+	w_spin.max_value = 256
+	w_spin.step = 64
+	w_spin.value = width
+	w_spin.custom_minimum_size = Vector2(80, 30)
+	size_row.add_child(w_spin)
+
+	var h_lbl := Label.new()
+	h_lbl.text = "H:"
+	h_lbl.add_theme_font_size_override("font_size", 14)
+	h_lbl.add_theme_color_override("font_color", COL_DIM)
+	size_row.add_child(h_lbl)
+
+	var h_spin := SpinBox.new()
+	h_spin.min_value = 64
+	h_spin.max_value = 256
+	h_spin.step = 64
+	h_spin.value = height
+	h_spin.custom_minimum_size = Vector2(80, 30)
+	size_row.add_child(h_spin)
+
+	# Ask LLM button
+	var ask_llm_btn := _make_action_button("Chiedi all'IA la dimensione")
+	ask_llm_btn.add_theme_color_override("font_color", COL_ACCENT)
+	ask_llm_btn.pressed.connect(func() -> void:
+		var item_data := _find_item(item_name)
+		var cat: String = item_data.get("category", "")
+		var desc: String = item_data.get("description", item_name)
+		var messages := [{"role": "user", "content":
+			"What pixel size should a game item icon be for: '%s' (category: %s)? " % [desc, cat]
+			+ "Min 64, max 256, multiples of 64 only. "
+			+ "Reply ONLY with JSON: {\"width\":128,\"height\":128}"
+		}]
+		var result: Dictionary = await LLMService.chat_json(messages, "You suggest icon sizes. Respond ONLY with JSON.", 0.1)
+		var suggested_w: int = int(result.get("width", 64))
+		var suggested_h: int = int(result.get("height", 64))
+		suggested_w = clampi(snappedi(suggested_w, 64), 64, 256)
+		suggested_h = clampi(snappedi(suggested_h, 64), 64, 256)
+		w_spin.value = suggested_w
+		h_spin.value = suggested_h
+	)
+	_item_popup_vbox.add_child(ask_llm_btn)
+
+	# Generate button
+	var gen_btn := _make_action_button("Genera Immagine")
+	gen_btn.add_theme_color_override("font_color", Color("2ecc71"))
+	gen_btn.pressed.connect(func() -> void:
+		var fw: int = int(w_spin.value)
+		var fh: int = int(h_spin.value)
+		_hide_item_popup()
+		await _do_generate_item_image(item_name, fw, fh)
+	)
+	_item_popup_vbox.add_child(gen_btn)
+
+	var cancel_btn := _make_action_button("Annulla")
+	cancel_btn.pressed.connect(_hide_item_popup)
+	_item_popup_vbox.add_child(cancel_btn)
+
+	_item_popup.visible = true
+
+
+func _do_generate_item_image(item_name: String, width: int, height: int) -> void:
+	_ui_flash_message("Generando immagine per %s..." % item_name)
+
+	var item_data := _find_item(item_name)
+	var desc: String = item_data.get("description", item_name)
+	var cat: String = item_data.get("category", "")
+	var style: String = GameState.image_style
+	if style == "custom" and GameState.custom_style != "":
+		style = GameState.custom_style
+
+	var prompt := "%s, %s, %s style, white background, game item icon, centered, simple, no text" % [item_name, desc, style]
+	if cat != "":
+		prompt += ", %s" % cat
+
+	var invoke := get_node_or_null("/root/InvokeService")
+	if invoke == null:
+		_ui_flash_message("InvokeService non disponibile")
+		return
+
+	var image_name: String = await invoke.generate_image(prompt, width, height)
+	if image_name.is_empty():
+		_ui_flash_message("Errore generazione immagine")
+		return
+
+	# Download and save locally
+	var image_bytes: PackedByteArray = await invoke.download_image(image_name)
+	if image_bytes.is_empty():
+		_ui_flash_message("Errore download immagine")
+		return
+
+	var safe_name := item_name.to_lower().replace(" ", "_").replace("/", "_")
+	var save_path := "user://item_img_%s.png" % safe_name
+	var img := Image.new()
+	if img.load_png_from_buffer(image_bytes) != OK:
+		if img.load_jpg_from_buffer(image_bytes) != OK:
+			img.load_webp_from_buffer(image_bytes)
+
+	if img.is_empty():
+		_ui_flash_message("Formato immagine non riconosciuto")
+		return
+
+	_remove_white_background(img)
+	img.save_png(save_path)
+	var abs_path := ProjectSettings.globalize_path(save_path)
+
+	# Update item in GameState
+	for i in range(GameState.objects.size()):
+		if GameState.objects[i].get("name", "") == item_name:
+			GameState.objects[i]["image_path"] = abs_path
+			GameState.objects[i]["image_width"] = width
+			GameState.objects[i]["image_height"] = height
+			break
+
+	_ui_flash_message("Immagine generata per %s!" % item_name)
+	_refresh_inventory()
+
+
+func _on_suggest_outfit() -> void:
+	var data: Dictionary = _get_char_data()
+	var pexels := get_node_or_null("/root/PexelsService")
+	if pexels == null or not pexels.is_available():
+		_ui_flash_message("PexelsService non disponibile")
+		return
+
+	_ui_flash_message("Cercando outfit su Pexels...")
+	var results: Array = await pexels.search_outfit_for_character(data)
+	if results.is_empty():
+		_ui_flash_message("Nessun risultato trovato")
+		return
+
+	# Show selection popup
+	for child in _item_popup_vbox.get_children():
+		child.queue_free()
+
+	var title := Label.new()
+	title.text = "Scegli Outfit"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_color_override("font_color", COL_ACCENT)
+	_item_popup_vbox.add_child(title)
+
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
+	_item_popup_vbox.add_child(grid)
+
+	# Resize popup to be bigger for images
+	_item_popup.offset_left = -300
+	_item_popup.offset_right = 300
+	_item_popup.offset_top = -250
+	_item_popup.offset_bottom = 250
+
+	for photo: Dictionary in results:
+		var photo_url: String = photo.get("url_small", "")
+		var photo_medium: String = photo.get("url_medium", "")
+		if photo_url == "":
+			continue
+
+		var cell := VBoxContainer.new()
+		cell.add_theme_constant_override("separation", 4)
+		grid.add_child(cell)
+
+		# Download thumbnail
+		var thumb_bytes: PackedByteArray = await pexels.download_image(photo_url)
+		if thumb_bytes.is_empty():
+			continue
+
+		var img := Image.new()
+		if img.load_jpg_from_buffer(thumb_bytes) != OK:
+			if img.load_png_from_buffer(thumb_bytes) != OK:
+				continue
+
+		var tex := ImageTexture.create_from_image(img)
+		var tex_btn := TextureButton.new()
+		tex_btn.texture_normal = tex
+		tex_btn.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+		tex_btn.ignore_texture_size = true
+		tex_btn.custom_minimum_size = Vector2(160, 120)
+		var medium_url: String = photo_medium
+		var alt_text: String = photo.get("alt", "outfit")
+		tex_btn.pressed.connect(_on_outfit_selected.bind(medium_url, alt_text))
+		cell.add_child(tex_btn)
+
+		var desc_lbl := Label.new()
+		desc_lbl.text = photo.get("alt", "").left(25)
+		desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		desc_lbl.add_theme_font_size_override("font_size", 10)
+		desc_lbl.add_theme_color_override("font_color", COL_DIM)
+		desc_lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		cell.add_child(desc_lbl)
+
+	var close_btn := _make_action_button("Annulla")
+	close_btn.pressed.connect(_hide_item_popup)
+	_item_popup_vbox.add_child(close_btn)
+
+	_item_popup.visible = true
+
+
+func _on_outfit_selected(image_url: String, description: String) -> void:
+	_hide_item_popup()
+	_ui_flash_message("Scaricando outfit...")
+
+	var pexels := get_node_or_null("/root/PexelsService")
+	if pexels == null:
+		return
+
+	var img_bytes: PackedByteArray = await pexels.download_image(image_url)
+	if img_bytes.is_empty():
+		_ui_flash_message("Errore download")
+		return
+
+	var img := Image.new()
+	if img.load_jpg_from_buffer(img_bytes) != OK:
+		if img.load_png_from_buffer(img_bytes) != OK:
+			_ui_flash_message("Formato non riconosciuto")
+			return
+
+	var data: Dictionary = _get_char_data()
+	var char_name: String = data.get("name", "unknown")
+	var safe_name := char_name.to_lower().replace(" ", "_")
+	var save_path := "user://outfit_%s.jpg" % safe_name
+	img.save_jpg(save_path)
+
+	# Create outfit item and equip it
+	var outfit_item := {
+		"name": description.left(40) if description != "" else "Outfit",
+		"description": "Outfit from Pexels: %s" % description,
+		"category": "clothes",
+		"image_path": ProjectSettings.globalize_path(save_path),
+		"owner": char_name,
+		"location": "equipped",
+	}
+	GameState.add_object(outfit_item)
+
+	# Equip in chest slot
+	data["slot_chest"] = outfit_item["name"]
+	if _mode == "npc":
+		GameState.add_npc(data)
+
+	_sync_outfit_array()
+	_refresh_all()
+	_ui_flash_message("Outfit applicato: %s" % outfit_item["name"])
+
+
+func _on_save_to_library() -> void:
+	var data: Dictionary = _get_char_data()
+	var char_name: String = data.get("name", "")
+	if char_name == "":
+		return
+	# Collect equipped items with slot info
+	var equipped: Array = []
+	for slot_key in SLOT_MAP:
+		var item_name: String = data.get("slot_%s" % slot_key, "")
+		if item_name == "":
+			continue
+		for obj in GameState.objects:
+			if obj.get("name", "") == item_name:
+				var item_copy: Dictionary = obj.duplicate(true)
+				item_copy["_slot"] = slot_key
+				equipped.append(item_copy)
+				get_node("/root/LibraryDB").save_item(obj)
+				break
+	get_node("/root/LibraryDB").save_character(data, equipped)
+	_ui_flash_message("Salvato in libreria!")
+
+
+func _ui_flash_message(msg: String) -> void:
+	# Temporarily show a message on the outfit label
+	var prev := _outfit_label.text
+	_outfit_label.text = msg
+	_outfit_label.add_theme_color_override("font_color", Color("2ecc71"))
+	await get_tree().create_timer(2.0).timeout
+	_outfit_label.text = prev
+	_outfit_label.add_theme_color_override("font_color", COL_TEXT)
+
+
 func _on_add_item_pressed() -> void:
 	_add_name_edit.text = ""
 	_add_desc_edit.text = ""
@@ -1274,6 +1674,19 @@ func _make_action_button(text: String) -> Button:
 
 	btn.add_theme_stylebox_override("focus", hover)
 	return btn
+
+
+func _remove_white_background(img: Image) -> void:
+	img.convert(Image.FORMAT_RGBA8)
+	var threshold := 0.88
+	for y in range(img.get_height()):
+		for x in range(img.get_width()):
+			var c: Color = img.get_pixel(x, y)
+			if c.r > threshold and c.g > threshold and c.b > threshold:
+				var whiteness: float = minf(minf(c.r, c.g), c.b)
+				var alpha: float = 1.0 - ((whiteness - threshold) / (1.0 - threshold))
+				alpha = clampf(alpha, 0.0, c.a)
+				img.set_pixel(x, y, Color(c.r, c.g, c.b, alpha))
 
 
 func _get_badge_color(category: String) -> Color:

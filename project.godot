@@ -20,6 +20,8 @@ config/icon="res://icon.svg"
 GameState="*res://autoload/GameState.gd"
 LLMService="*res://autoload/LLMService.gd"
 InvokeService="*res://autoload/InvokeService.gd"
+LibraryDB="*res://autoload/LibraryDB.gd"
+PexelsService="*res://autoload/PexelsService.gd"
 
 [display]
 
